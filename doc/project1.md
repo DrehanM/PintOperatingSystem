@@ -15,7 +15,7 @@ We also take the number of words in argv, and set this to be argc.
 Part B is putting argv and argc onto the processes stack so that when main is called it can access these variables. 
 
 ## Data Structures and Functions
-###Part A
+### Part A
 
 Data Structures
 
@@ -54,7 +54,7 @@ void get_word_list(char *file_name, list word_lst)
 void get_argv_from_list(list word_lst, char *argv[], int argv_lengths[]) 
 ```
 
-###Part B
+### Part B
 Data Structures
 
 ```
@@ -83,7 +83,7 @@ int push_to_stack(uint load, void**if_esp)
 int stack_alignment_calc(uint stack_pointer, int argc)
 ```
 
-##Algorithms
+## Algorithms
 Part A requires an algorithm to split up the char pointer we are given to a list of words. 
 A simple algorithm that does this is by starting a new word if we encounter a space. 
 In our previous homeworks we were given a maximum length that these words could be which allowed us to preallocate memory for the words. 
@@ -105,10 +105,10 @@ This is done in stack_alignment_calc.
 We then push garbage data to align the stack, and then push on argv[i] addresses, argv, argc, and the return address. 
 
 
-##Synchronization
+## Synchronization
 	
 
-##Rationale
+## Rationale
 
 
 
