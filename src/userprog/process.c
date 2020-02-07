@@ -63,7 +63,6 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-  if_.esp -= 20;
 
   /* If load failed, quit. */
 
@@ -80,7 +79,11 @@ start_process (void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   
+  int memory_allocated = 0; // variable for 
+
   asm volatile ("movl %0, %%esp" : : "r" (if_.esp));
+
+  if_.esp -= 20;
 
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
