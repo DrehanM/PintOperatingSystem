@@ -125,7 +125,12 @@ The task of implementing process control syscalls is also a two-part process. Sy
 
 // Returns nonzero value if any of the following validation procedures fails. 0 otherwise.
 int validate_syscall_args(uint32_t* args) {
-	return in_userspace_and_notnull(args) || is_valid_file_or_buffer(args);
+	uint32_t error_code;
+	error_code = in_userspace_and_notnull(args);
+	if (error_code > 0) {return error_code;}
+	error_code = is_valid_file_or_buffer(args);
+	if (error_code > 0) {return error_code;}
+	return 0;
 }
 
 // Returns 0 if all necessary arguments of the syscall are in valid userspace memory, are mapped in memory, and are not null pointers.
@@ -141,7 +146,31 @@ int in_userspace_and_notnull(args);
 int is_valid_file_or_buffer(args)
 ```
 
-Task 3: File Operation Syscalls
+### Algorithms
+
+Parameter validation will be implemented as a composite of two checks: verifying that the arguments are in mapped userspace and are not null and verifying if any pointers to buffers or files are addressed to mapped userspace and not null. We employ the use of two functions to do this, each returning some integer corresponding to success (0) or a specific error. These functions are then run in sequence. If either call returns nonzero, we immediately return this integer to syscall_handler.
+
+*Syscall_handler* calls *validate_syscall_args(args)* passing in ((uint32_t*) f->esp) as a parameter, since the syscall args are to be stored at and above f->esp. 
+
+Within *in_userspace_and_notnull*, all arguments are checked in 3 ways. First, we verify if the address of the argument exists in user virtual address space with is_user_vaddr(&args[i]). To ensure that the address is fully valid, we also verify that  is_user_vaddr(&args[i] + 3) is true. Second, we then check if the address exists in mapped user memory. To do this, we access the pagedir of the current thread via thread_current()->padedir and set this equal to uint32_t \*pd. Then, we call padedir_get_page(pd, &args[i]) and padedir_get_page(pd, &args[i] + 3), verifying that both of these evaluate to non-null. Finally, we access the contents of each argument verifying that args[i] != NULL. Since syscalls have varying numbers of arguments passed in, there exists a switch-case control statement to group syscall types by number of arguments passed in. This allows us to only check the addressing of first and last argument since these entries are likely to indicate if the arguments span invalid memory. All arguments are still checked for non-nullness.
+
+In a similar fashion, we employ a switch-case statement in *is_valid_file_or_buffer*, grouping cases by whether the specific syscall contains a pointer to a file, a pointer to a buffer, or neither. File pointers are stored in args[1] so we carefully check if this pointer is pointing to mapped userspace and is not null using sequential calls is_user_vaddr and pagedir_get_page on args[1] (not &args[1]). We then verify non-nullness with *args[1] != NULL. Buffer pointers are stored in args[2], so for these syscalls the same checks for file pointers mentioned before are employed on args[2] and *args[2].
+
+When *validate_syscall_args* finally returns with an integer, *syscall_handler* will elect to kill the offending process appropriate if a nonzero value is returned. Specifically, if 3 or 1 is returned, we elect to use *kill* from exception.c to terminate the process. If 2 is returned, we elect to use *page_fault* from exception.c to denote a violation on unmapped page memory. If 0 is returned, we move to process the syscall normally, as outlined in Part B below.
+
+### Synchronization
+
+### Rationale
+
+## Part B
+
+### Data Structures & Functions
+
+### Synchronization
+
+### Rationale
+
+# Task 3: File Operation Syscalls
 
   All file operation syscalls are handled by the syscall_handler function in syscall.c. Thus, to know if a user is calling a  file operation, we will check if args[0] is equal to any of the following: {SYS_CREATE, SYS_REMOVE, SYS_OPEN, SYS_FILESIZE, SYS_READ, SYS_WRITE, SYS_SEEK, SYS_TELL, SYS_CLOSE}. Once we identify which file operation a user is calling we will call the file_operation_handler function (define below) which handles synchronization and validates the user's arguments. If the arguments are valid, file_operation_handler will then use Pintos file system to perform the requested task.
   
