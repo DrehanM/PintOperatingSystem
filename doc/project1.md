@@ -112,7 +112,34 @@ We then push garbage data to align the stack, and then push on argv[i] addresses
 
 
 
-Task 2: Process Control Syscalls
+# Task 2: Process Control Syscalls
+
+The task of implementing process control syscalls is also a two-part process. Syscalls are to be designed such that the kernel prevents invalid, corrupted, or null user-passed arguments from harming the OS, whether it be deliberately or accidentally. Thus, before processing the actual request, the kernel will carefully validate the arguments and memory passed in by the user program. If the syscall arguments are invalid, the kernel will move to terminate the calling user process (Part A). Afterwards, once validation has passed, the syscall handler will call the appropriate control sequence based on the arguments of passed to the interrupt frame. Since syscalls are enumerated based on the type of call, the handler will process the request in a switch-case sequence, identifying the syscall based on the contents of args[0] in syscall_handler. Once the syscall type has been identified, the appropriate control sequences will be deployed. We cover the control sequences for processing the following for syscalls in this section: HALT, PRACTICE, WAIT, EXEC (Part B).
+
+## Part A
+
+### Data Structures & Functions
+
+```
+/* In userprog/syscall.c */
+
+// Returns nonzero value if any of the following validation procedures fails. 0 otherwise.
+int validate_syscall_args(uint32_t* args) {
+	return in_userspace_and_notnull(args) || is_valid_file_or_buffer(args);
+}
+
+// Returns 0 if all necessary arguments of the syscall are in valid userspace memory, are mapped in memory, and are not null pointers.
+// Returns 1 if any required argument for the syscall is null.
+// Returns 2 if any of the arguments are fully or partially in unmapped memory.
+// Returns 3 if any arguments are fully or partially outside of user virtual address space.
+int in_userspace_and_notnull(args);
+
+// Returns 0 if syscall is not handling a file or buffer OR if the parameter files/buffers are in valid user space, mapped correctly, and not null
+// Returns 1 if the file or buffer is a null pointer.
+// Returns 2 if the file or buffer points to unmapped memory.
+// Returns 3 if the file or buffer points to memory outside of user virtual address space.
+int is_valid_file_or_buffer(args)
+```
 
 Task 3: File Operation Syscalls
 
