@@ -164,6 +164,8 @@ No synchronization is utilized during argument validation as this is done in ser
 
 ### Rationale
 
+The above design seems the most logically sounds as it checks for all of the possible invalid memory states that could corrupt a kernel thread during a system call. We have decoupled general argument checks and file/buffer memory checks in order to have an easier time debugging if such validations fail. The code required for implementing the validation schemes will mostly involve switch case statements, which are straightforward and easy to debug. Time complexity for a check will be at most on the order of the number of arguments passed in, since each check (null check, page check, and address space check) are all constant time checks. Even file/buffer memory checks are constant as they employ the same logic. Thus, since we can have at most 3 arguments in a syscall, argument validation operates in constant time. No extra memory is utilized as the checks are done on a pointer to the arguments themselves, which is already declared in the skeleton code for *syscall_handler*.
+
 ## Part B: Syscall Routine
 
 ### Data Structures & Functions
@@ -377,8 +379,27 @@ To accomodate the use of wait_status synchronization objects, a process will up 
 		
 ### Synchronization
 
+To recap the synchronization schemes used above, we use the dead semaphore in wait_status structs to signify the sleeping and waking of a parent process while it waits for the termiantion of its child. We implement a lock in tandem with the reference_count member of the wait_status struct to allow safe decrements to reference_count when either a parent or child dies, preventing any race conditions if the parent and child happen to be dying at the same time. Finally, we use the temporary semaphore to block the parent thread while the newly executed child can attempt to load its user program. This is to prevent exec from returning before the parent is informed of the child's death.
+
 ### Rationale
 
+We opted to use a wait_status struct to impose synchronization between parent and child processes to prevent unnecessary read/write access between processes. To a parent process, the only pertinent information about its child is its state while the parent waits. This design follows a least privelege scheme. 
+
+For the two more complicated syscalls in this task, EXEC and WAIT, the precise logic required to manipulate wait_status structs is the core to this design. Every single added or modified function and data structure maipulates wait_status structures in some form. We believe using a central data structure to drive cooperation between processes is far easier to implement and debug than having direct pointers between processes/threads.
+
+We felt that writing out code in C (without implementing it) made thinking through edge cases and general logic easier. We elected to use short modular functions to ease debugging and allow additions of new features, if need be.
+
+Finally, time/space complexity for each syscall are as follows:
+	- HALT & PRACTICE: 
+		- Constant time
+		- Constant space
+	- EXEC: 
+		- Constant time as there are no calls with dependence on the number of children
+		- Linear space in terms of the size of the executed child program.
+	- WAIT:
+		- Linear in time on the order of the number of children the calling process has (due to *find_child_ws* loop)
+		- Constant in time. There is allocated data that depends on the parent or target child process.
+		
 # Task 3: File Operation Syscalls
 
   All file operation syscalls are handled by the syscall_handler function in syscall.c. Thus, to know if a user is calling a  file operation, we will check if args[0] is equal to any of the following: {SYS_CREATE, SYS_REMOVE, SYS_OPEN, SYS_FILESIZE, SYS_READ, SYS_WRITE, SYS_SEEK, SYS_TELL, SYS_CLOSE}. Once we identify which file operation a user is calling we will call the file_operation_handler function (define below) which handles synchronization and validates the user's arguments. If the arguments are valid, file_operation_handler will then use Pintos file system to perform the requested task.
