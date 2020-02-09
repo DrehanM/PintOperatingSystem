@@ -391,14 +391,14 @@ We felt that writing out code in C (without implementing it) made thinking throu
 
 Finally, time/space complexity for each syscall are as follows:
 - HALT & PRACTICE: 
-	- Constant time
-	- Constant space
+	- Constant time. No argument dependence.
+	- Constant space. No argument dependence.
 - EXEC: 
-	- Constant time as there are no calls with dependence on the number of children
-	- Linear space in terms of the size of the executed child program.
+	- Constant time as there are no calls with dependence on the number of children.
+	- Linear space in terms of the size of the executing child program.
 - WAIT:
-	- Linear in time on the order of the number of children the calling process has (due to *find_child_ws* loop)
-	- Constant in time. There is allocated data that depends on the parent or target child process.
+	- Linear in time on the order of the number of children the calling process has (due to *find_child_ws* search loop)
+	- Constant in time. There is no allocated data that depends on the parent or target child process.
 		
 # Task 3: File Operation Syscalls
 
