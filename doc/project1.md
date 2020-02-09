@@ -116,7 +116,7 @@ We then push garbage data to align the stack, and then push on argv[i] addresses
 
 The task of implementing process control syscalls is also a two-part process. Syscalls are to be designed such that the kernel prevents invalid, corrupted, or null user-passed arguments from harming the OS, whether it be deliberately or accidentally. Thus, before processing the actual request, the kernel will carefully validate the arguments and memory passed in by the user program. If the syscall arguments are invalid, the kernel will move to terminate the calling user process (Part A). Afterwards, once validation has passed, the syscall handler will call the appropriate control sequence based on the arguments of passed to the interrupt frame. Since syscalls are enumerated based on the type of call, the handler will process the request in a switch-case sequence, identifying the syscall based on the contents of args[0] in syscall_handler. Once the syscall type has been identified, the appropriate control sequences will be deployed. We cover the control sequences for processing the following for syscalls in this section: HALT, PRACTICE, WAIT, EXEC (Part B).
 
-## Part A
+## Part A: Argument Validation
 
 ### Data Structures & Functions
 
@@ -160,9 +160,11 @@ When *validate_syscall_args* finally returns with an integer, *syscall_handler* 
 
 ### Synchronization
 
+No synchronization is utilized during argument validation as this is done in serial and independently of other processes.
+
 ### Rationale
 
-## Part B
+## Part B: Syscall Routine
 
 ### Data Structures & Functions
 
@@ -172,48 +174,85 @@ When *validate_syscall_args* finally returns with an integer, *syscall_handler* 
 // Shared struct between parent and child that is created when parent calls wait on child.
 // Used to communicate child process's completion status to waiting parent.
 struct wait_status {
-	struct semaphore dead;
-	int exit_status;
-	tid_t child_tid;
-	int reference_count;
-	struct lock lock;
+	struct semaphore dead;			//flag to signify if this thread has terminated.
+	int exit_status;			//exit status of process upon termination.
+	pid_t pid;				//process ID of the owner of this struct
+	int reference_count;			//number of processes that point to this struct
+	struct lock lock;			//lock to protect reference_count
 	
-	struct list_elem elem;
+	struct list_elem elem;			//underlying list element
 }
 
-//To be included as members of threat struct.
-struct wait_status *wait_status;	// This thread's wait status reference.
-struct list children;			// A list of wait_status objects shared between this thread and each child.
-
-void init_wait_status(struct wait_status *ws) {
+// Process/Thread Control Block. Pintos is single-threaded, so processes and threads are the same thing.
+struct thread {
+	tid_t tid;  			    // Thread identifier.
+	enum thread_status status;          // Thread state.
+	char name[16];                      // Name (for debugging purposes).
+	uint8_t *stack;                     // Saved stack pointer.
+	int priority;                       // Priority.
+	struct list_elem allelem;           // List element for all threads list.
 	
+	// Adding Process-related members
+	pid_t pid;			    // Process identifier. Same value as TID.
+	uint32_t *pagedir;		    // Page directory. Already existing in skeleton code.
+	struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
+	struct list children;		    // List of wait_status objects shared by this thread and its children.
+	
+	struct list_elem elem; 
+	unsigned magic;
+}
+	
+
+//Create and allocate memory for a new wait_status struct for a new process
+// Initialize the dead semaphore and reference_count lock
+void init_wait_status(struct wait_status *ws, pid) {
+	ws = malloc(sizeof(wait_status));
+	ws->pid = pid;
+	sema_init(ws->dead, 1)
+	lock_init(ws->lock);
+	lock_acquire(ws->lock);
+	ws->reference_count = 2;
+	lock_release(ws->lock);
+}
+
+//Free the memory taken up by the given wait_status struct and remove it from parent's children list.
+void destroy_wait_status(struct wait_status *ws) {
+	ASSERT(ws->dead != 0);
+	list_remove(ws->elem);
+	free(ws);
+}
+
+/* In threads/thread.c */
+
+//Partially modifying thread_create
+//Added lines to define pid and initialize wait_status struct.
+tid_t thread_create(const char *name, int priority, thread_func *function, void *aux) {
+	...
+	tid = t->tid = allocate_tid();
+	t->pid = (pid_t) tid;
+	...
+	init_wait_status(t->wait_status);
+	list_push_front(thread_current()->children, t->wait_status->elem);
+	...
+	return tid;
 }
 
 /* In userprog/process.c */
 
 //Given a list of wait_status structs, return the wait_status that has the given TID. NULL if no match.
-//Implemented similarly to find_word from HW1.
+//Implementation is omitted since it is very similar to find_word() from HW1.
 struct wait_status *find_child_ws(list *children_ws, tid_t tid);
 
-//Create and allocate memory for a new wait_status struct for a new process
-// Initialize the dead semaphore and reference_count lock
-void init_wait_status(struct wait_status *ws);
-
-//Free the memory taken up by the given wait_status struct and remove it from parent's children list.
-void destroy_wait_status(struct wait_status *ws);
 
 //Fully modifying process_wait
-int process_wait(tid_t child_tid) {
+int process_wait(pid_t child_pid) {
 	struct thread *parent = thread_current();
-	struct wait_status *child_ws = find_child(parent->children, tid);
+	struct wait_status *child_ws = find_child_ws(parent->children, pid);
 	if (child_ws == NULL) {return -1;}
 	success = sema_try_down(&(child_ws->dead));
 	if (!success) {return -1;}
-	
-	sema_down(&(child_ws->dead));
 	int child_exit_status = child_ws->exit_status;
 	destroy_wait_status(child_ws);
-	// NEED TO FREE CHILD THREAD MEMORY
 	return child_exit_status;
 
 //Safely decrement the given wait status struct's reference_count. If reference_count reaches zero, destroy the wait_status.
@@ -228,10 +267,8 @@ void decrement_and_destroy_if_zero(struct wait_status *ws) {
 	}
 	
 //Decrement all reference_count variables shared by the current thread and cur's parent and cur's children.
-void decrement_all_references(void) {
-	struct thread *cur = thread_current(); 
-	struct wait_status *ws = cur->wait_status;
-  	sema_up(&(ws->dead));
+//Sema up on the current threads wait_status->dead semaphore.
+void decrement_all_references(struct wait_status *ws) {
 	decrement_and_destroy_if_zero(ws);
 	struct wait_status *child_ws;
 	for (e = list_begin(cur->children); e->next != NULL; e = e->next) {
@@ -242,25 +279,89 @@ void decrement_all_references(void) {
 
 //Partially modifying process_exit
 void process_exit(void) {
-	... //rest of the existing function declaration.
-	decrement_all_references();
+	... //rest of the existing function declaration. Remove the sema_up(&temporary) line.
+	struct wait_status *ws = cur->wait_status;
+	sema_up(&(ws->dead));
+	decrement_all_references(ws);
+	
+//Partially modifying process_execute
+// The semaphore temporary will ensure that child gets a chance to load its process.
+// After the child has attempted a load, the semaphore will be up'd.
+// Then, we examine the wait_status->dead->value. Since this is initalized to 1 before a wait is ever called,
+	a thread_exit() would increment this once more, leading to a value of 2 if no parent ever waited.
+tid_t process_execute(const char *file_name) {
+	...
+	tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  	if (tid == TID_ERROR) {
+    		palloc_free_page (fn_copy);
+    		return tid;
+  	} 
+  	sema_down(&temporary);
+  	struct wait_status *child_ws = find_child_ws(thread_current()->children, tid);
+  	switch (child_ws->dead->value) {
+    		case 2:
+      			//load failed
+			destroy_wait_status(child_ws);
+      			return TID_ERROR;
+    		case 1:
+      			// load success
+      			return tid;
+    		default:
+      			//something else happened
+			// PANIC
+			destroy_wait_status(child_ws);
+			return tid;
+  }
+
+//Partially modifying start_process
+//If the load fails, we up the semaphore and exit the child process.
+//If success, we up the semaphore.
+static void start_process(void *file_name_) {
+	...
+	if (!success) {
+		sema_up(&temporary);
+		thread_exit();
+	}
+	sema_up(&temporary); 
+	...	
 	
 /* In userprog/syscall.c */
 
 static void syscall_handler(struct intr_frame *f) {
 	uint32_t* args = ((uint32t *) f->esp);
-	int validation_status = validate_syscall_args(args);
+	int validation_status_code = validate_syscall_args(args);
+	int syscall_id = args[0];
 	
-	switch(validation_status) {
-		case 0:
-			break;
-		case 1:
-		case 2: 
+	switch(validation_status_code) {
+		Handle each validation_status_code according to the type of error.
+			- 0: no error -> do nothing
+			- 1: null reference ->
+			- 2: page violation -> invoke a page_fault
+			- 3: user virtual address space vilation ->
+	
+	switch(syscall_id) {
+		case SYS_HALT: 
+			shutdown_power_off();
+		case SYS_EXIT:
+			f->eax = args[1];
+			print some stuff;
+			thread_exit();
+		case SYS_EXEC:
+			pid_t pid;
+			pid = process_execute(args[1]);
+			f->eax = pid;		
+		case SYS_WAIT:
+			pid_t pid = args[1];
+			int child_exit_status = process_wait(args);
+			f->eax = child_exit_status;
+		case SYS_PRACTICE:
+			f->eax = args[1] + 1;
+	}
 			
 			
 
 ```
-### Algorithms
+### Algorithms and Synchronization
 Assuming we have validated syscall arguments correctly, we can process the various syscalls and their arguments appropriately. Return values will be stored in f->eax, as is convention.
 #### PRACTICE: 
 Set f->eax = args[1] + 1 and return. EZPZ.
@@ -270,8 +371,9 @@ Call *shutdown_power_off()*, which shuts down the system if we are running QEMU 
 The WAIT syscall requires careful coordination of shared resources between the calling parent and the target child. As seen in the code above, we utilize the *wait_status* struct, which exists as a member of each thread. A oarent can access their children's wait_status structs by iterating through the list of wait_status structs that exist under the struct member *children*. When a process calls wait of a specific PID/TID, we iterate through the children to find the wait_status struct of the target child. If found, the current parent process then downs the semaphore *dead* in the child's wait_status and goes to sleep until the child willingly exists or is terminated by the kernel. If the target PID/TID is not found OR the parent has already called WAIT on the target child, the process_wait() call and, subsequently, the WAIT syscall returns with value -1. After the child has died and has appropriately set the dead semaphore up such that the parent can wake up. The dead child's exit status is then taken from the shared wait_status struct, ready to be returned by process_wait() and then the WAIT syscall. The same wait_status struct is then destroyed and removed from the children list. We also free all of the child's resources, including its thread and pagedir. Finally, we return the exit status. Some edge cases to watch out are:
 - premature termination of the parent, before the child returns: in this situation, the parent will decrement the reference_count variables in each of its children's wait_status structs to signify the parent's death. Thus, when each of the children die, they will destroy their own wait_statuses on behalf of the dead parent when the reference_count reaches 0.
 #### EXEC:
-To do later.
-	
+The EXEC syscall will ensure that the parent calls process_execute(args[1]) and it will wait for the returned child pid. If pid == -1, then execution failed. We must ensure synchronization of this call between the parent and child. In particular, since *load*, called in *start_process* is called by the child thread after it has been unblocked, it is essential that the parent waits until the child has attempted to load. We down a semaphore as the parent after the child thread has been created but before the child process has loaded its user program. This way, the child thread can attempt to load the user program. If successful, the child process will return from *start_process* normally, uping the semaphore that the parent down'd. If the child process fails to load, then the semaphore is up'd before the child calls *thread_exit*. After the child process has attempted to load and the parent wakes up, the parent can check the child's wait_status semaphore value. This value is initalized to 1, before a WAIT is ever invoked. However, during thread_exit, this value is incremented by 1. This means that the wait_status semaphore value can either be a 1 (if the child is exiting after the parent calls WAIT) or a 2 (when the child fails to load and exits before wait is ever called). If the value of the child's wait_status semaphore is 2 when the parent wakes up after an exec call, then the parent knows the child has died. Thus, we return -1 from the EXEC syscall. Otherwise, we return the value retured from *process_execute*, which is either the child's PID if it survives and loads properly, or -1 (PID_ERROR) if the child cannot properly allocate memory. Again, we store the returned PID or PID_ERROR in f->eax.
+#### Minor modifications to EXIT and process_exit:
+To accomodate the use of wait_status synchronization objects, a process will up its wait_status->dead semaphore and decrement all of its shared reference_count variables before exiting. This logic has been added to the end of *process_exit*.
 		
 ### Synchronization
 
