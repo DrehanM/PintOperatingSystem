@@ -156,7 +156,7 @@ Within *in_userspace_and_notnull*, all arguments are checked in 3 ways. First, w
 
 In a similar fashion, we employ a switch-case statement in *is_valid_file_or_buffer*, grouping cases by whether the specific syscall contains a pointer to a file, a pointer to a buffer, or neither. File pointers are stored in args[1] so we carefully check if this pointer is pointing to mapped userspace and is not null using sequential calls is_user_vaddr and pagedir_get_page on args[1] (not &args[1]). We then verify non-nullness with *args[1] != NULL. Buffer pointers are stored in args[2], so for these syscalls the same checks for file pointers mentioned before are employed on args[2] and *args[2].
 
-When *validate_syscall_args* finally returns with an integer, *syscall_handler* will elect to kill the offending process appropriate if a nonzero value is returned. Specifically, if 3 or 1 is returned, we elect to use *kill* from exception.c to terminate the process. If 2 is returned, we elect to use *page_fault* from exception.c to denote a violation on unmapped page memory. If 0 is returned, we move to process the syscall normally, as outlined in Part B below.
+When *validate_syscall_args* finally returns with an integer, *syscall_handler* will elect to kill the offending process appropriate if a nonzero value is returned. Specifically, if 3 or 1 is returned, we elect to use *kill* from exception.c to terminate the process. If 2 is returned, we elect to use *page_fault* from exception.c to denote a violation on unmapped page memory. Termination of a process also involves appropriately freeing shared resources between the process's parent or its children, if any. We discuss the synchronization protocols for termination in more detail below.  If 0 is returned, we move to process the syscall normally, as outlined in Part B below.
 
 ### Synchronization
 
@@ -165,6 +165,100 @@ When *validate_syscall_args* finally returns with an integer, *syscall_handler* 
 ## Part B
 
 ### Data Structures & Functions
+
+```
+/* In threads/thread.h */
+// Shared struct between parent and child that is created when parent calls wait on child.
+// Used to communicate child process's completion status to waiting parent.
+struct wait_status {
+	struct semaphore dead;
+	int exit_status;
+	tid_t child_tid;
+	int reference_count;
+	struct lock lock;
+	
+	struct list_elem elem;
+}
+
+//To be included as members of threat struct.
+struct wait_status *wait_status;	// This thread's wait status reference.
+struct list children;			// A list of wait_status objects shared between this thread and each child.
+
+void init_wait_status(struct wait_status *ws) {
+	
+} 
+
+/* In userprog/process.c */
+
+//Given a list of wait_status structs, return the wait_status that has the given TID. NULL if no match.
+struct wait_status *find_child_ws(list *children_ws, tid_t tid);
+
+//Create and allocate memory for a new wait_status struct for a new process
+// Initialize the dead semaphore and reference_count lock
+void init_wait_status(struct wait_status *ws);
+
+//Free the memory taken up by the given wait_status struct and remove it from parent's children list.
+void destroy_wait_status(struct wait_status *ws);
+
+//Fully modifying process_wait
+int process_wait(tid_t child_tid) {
+	struct thread *parent = thread_current();
+	struct wait_status *child_ws = find_child(parent->children, tid);
+	if (child_ws == NULL) {return -1;}
+	success = sema_try_down(&(child_ws->dead));
+	if (!success) {return -1;}
+	
+	sema_down(&(child_ws->dead));
+	int child_exit_status = child_ws->exit_status;
+	destroy_wait_status(child_ws);
+	return child_exit_status;
+
+void decrement_references(void) {
+	struct thread *cur = thread_current() 
+	struct wait_status *ws = cur->wait_status;
+  	sema_up(&(ws->dead));
+	
+	lock_acquire(&(ws->reference_count));
+	ws->reference_count--;
+	lock_release(&(ws->reference_count))
+	if (ws->reference_count == 0) {destroy_wait_status(ws);}
+	
+	struct wait_status *child_ws;
+	for (e = list_begin(cur->children); e->next != NULL; e = e->next) {
+	    	child_ws = list_entry(e, wait_status, elem);
+	    	lock_acquire(&(child_ws->reference_count));
+		child_ws->reference_count--;
+		lock_release(&(ws->reference_count));
+		if (child_ws->reference_count == 0) {destroy_wait_status(child_ws);}
+	}
+	
+	
+}
+
+//Partially modifying process_exit
+void process_exit(void) {
+	...
+	struct wait_status *ws = cur->wait_status;
+  	sema_up(&(ws->dead));
+	
+	lock_acquire(&(ws->reference_count));
+	ws->reference_count--;
+	lock_release(&(ws->reference_count))
+	if (ws->reference_count == 0) {destroy_wait_status(ws);}
+	
+	
+
+	
+	
+	
+	
+	
+	
+	
+
+
+
+```
 
 ### Synchronization
 
