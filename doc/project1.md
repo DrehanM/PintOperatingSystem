@@ -1,7 +1,7 @@
 ## Group Members
 
 * Christopher DeVore <chrisdevore@berkeley.edu>
-* Dre Mahaarachchi <dre@berkeley.edu>
+* Dre Maharachi <dre@berkeley.edu>
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
 
@@ -67,19 +67,20 @@ int argv_lengths[];
 
 Functions
 ```
-// pushes argc, argv, and a return address to the stack. decrements esp
+// pushes argc, argv, and a garbage return address to the stack. decrements if_esp
 // returns 0 if reached bottom of memory
-int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], uint return_address, void **if_esp)
+int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp)
 ```
 
 ```
 // helper function containing asm instructions to push load to stack, decrements esp
 // returns 0 if reached bottom of memory
-int push_to_stack(uint load, void**if_esp)
+int push_to_stack(void *load, int bytes, void**if_esp)
 ```
 
 ```
-// returns the number of bytes the stack alignment needs to be
+// call before anything is pushed to stack
+// returns the number of bytes stack alignment needs to be, and add these bytes after 
 int stack_alignment_calc(uint stack_pointer, int argc)
 ```
 
@@ -87,29 +88,46 @@ int stack_alignment_calc(uint stack_pointer, int argc)
 Part A requires an algorithm to split up the char pointer we are given to a list of words. 
 A simple algorithm that does this is by starting a new word if we encounter a space. 
 In our previous homeworks we were given a maximum length that these words could be which allowed us to preallocate memory for the words. 
-Since we don’t have this guarantee here, since for example paths can be arbitrarily long, we can instead use the list data structure we used in homework one to dynamically build our words, using building_word_lst. 
+Since we don’t have this guarantee here, for example paths to files can be arbitrarily long, we can instead use the list data structure we used in homework one to dynamically build our words, using building_word_lst. 
 Once a word has been completed, we can then fill in a correctly sized char array and make a word_t. 
 
 In order to initialize the *argv[], we need to know how many words we have. 
 To do this, we can once again use the list data structure, word_lst. 
 We can dynamically add words to the list, and at the end look at how many words we have, and let this be argc. 
-We use the function get_word_list to convert the filename to a word list. 
-Once we have argc, we can initialize argv to length argc and copy over the list to an array, which is done in function get_argv_from_list.
+We use the function `get_word_list` to convert the filename to a word list. 
+Once `word_lst` is mutated, we can find its length using the built in `list_size` function, and let this be `argc`. 
+We then initialize `argv` to length `argc` and copy over the list to an array, which is done in function `get_argv_from_list`.
 
-Part B requires us to use asm volatile in order to push the arguments onto the stack. 
-This is done in the function load_arguments_to_stack. 
+Part B requires us to use `asm volatile` in order to push the arguments onto the stack. 
+This is done in the function `load_arguments_to_stack()`, which uses helper function `push_to_stack()` that contains 
 We push each word in reverse order, starting from the null terminator character and ending at the first character. 
 After we push the first character, we mark where on the stack each word begins in an internal list. 
-Once we push all of the words, we calculate how much of a stack alignment we need, taking into account the addresses for argv[i], argv, argc, and return address that we will push after. 
-This is done in stack_alignment_calc.
-We then push garbage data to align the stack, and then push on argv[i] addresses, argv, argc, and the return address. 
+Once we push all of the words, we calculate how much of a stack alignment we need, taking into account the addresses for `argv[i]`, `argv`, `argc`, and the return address that we will push after. 
+This is calculation is done in `stack_alignment_calc`.
+We then push garbage data to align the stack, and then push on `argv[i]` addresses, `argv`, `argc`, and the garbage return adress. 
+
+These functions will be called in `start_process` in process.c.
 
 
 ## Synchronization
-	
+The `start_process` function doesn't spawn any new threads, and doesn't access any resources shared across multiple threads.
+In addition the functions we implement won't do this either, therefore we don't have to worry about synchronization in this part. 
 
 ## Rationale
 
+
+### Part A
+We decided to use a list to build the words instead of preallocating a buffer for the characters. 
+Since words could potentially be really long (for example file paths), we didn't feel comfortable setting a limit on how big each word could be, and also didn't want to deal with the overhead of string copying if we had to expand the buffer. 
+Another benefit is that the list data structure comes with a built in length method, which makes it easier to keep track of word length as opposed to using a seperate variable. 
+Similar reasoning was used for the word list usage, where we didn't know how many words would be in file_name before hand. 
+
+The reason we then convert everything back to an array is to reduce overhead in Part B by allowing easy indexing. 
+
+### Part B
+We decided to make two helper functions `push_to_stack()` and `stack_alignment_calc()` to improve readability and testing. 
+`push_to_stack()` will contain all of the `asm` instructions of actually pushing to the stack, which helps improve readability.
+`stack_alignment_calc()` is just a tedious calculation which deserves it's own function for testing purposes. 
 
 
 # Task 2: Process Control Syscalls
