@@ -75,7 +75,8 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
 ```
 // helper function containing asm instructions to push load to stack, decrements esp
 // returns 0 if reached bottom of memory
-int push_to_stack(void *load, int bytes, void**if_esp)
+int push_address_to_stack(uint address, void**if_esp)
+int push_char_to_stack(char c, void**if_esp)
 ```
 
 ```
@@ -94,23 +95,23 @@ Once a word has been completed, we can then fill in a correctly sized char array
 In order to initialize the *argv[], we need to know how many words we have. 
 To do this, we can once again use the list data structure, word_lst. 
 We can dynamically add words to the list, and at the end look at how many words we have, and let this be argc. 
-We use the function `get_word_list` to convert the filename to a word list. 
-Once `word_lst` is mutated, we can find its length using the built in `list_size` function, and let this be `argc`. 
-We then initialize `argv` to length `argc` and copy over the list to an array, which is done in function `get_argv_from_list`.
+We use the function `get_word_list()` to convert the filename to a word list. 
+Once `word_lst` is mutated, we can find its length using the built in `list_size()` function, and let this be `argc`. 
+We then initialize `argv` to length `argc` and copy over the list to an array, which is done in function `get_argv_from_list()`.
 
 Part B requires us to use `asm volatile` in order to push the arguments onto the stack. 
-This is done in the function `load_arguments_to_stack()`, which uses helper function `push_to_stack()` that contains 
+This is done in the function `load_arguments_to_stack()`, which uses helper function `push_address_to_stack()` and `push_char_to_stack()` that contains the actual `asm` instructions. 
 We push each word in reverse order, starting from the null terminator character and ending at the first character. 
 After we push the first character, we mark where on the stack each word begins in an internal list. 
 Once we push all of the words, we calculate how much of a stack alignment we need, taking into account the addresses for `argv[i]`, `argv`, `argc`, and the return address that we will push after. 
-This is calculation is done in `stack_alignment_calc`.
+This is calculation is done in `stack_alignment_calc()`.
 We then push garbage data to align the stack, and then push on `argv[i]` addresses, `argv`, `argc`, and the garbage return adress. 
 
-These functions will be called in `start_process` in process.c.
+These functions will be called in `start_process()` in process.c.
 
 
 ## Synchronization
-The `start_process` function doesn't spawn any new threads, and doesn't access any resources shared across multiple threads.
+The `start_process()` function doesn't spawn any new threads, and doesn't access any resources shared across multiple threads.
 In addition the functions we implement won't do this either, therefore we don't have to worry about synchronization in this part. 
 
 ## Rationale
@@ -126,7 +127,7 @@ The reason we then convert everything back to an array is to reduce overhead in 
 
 ### Part B
 We decided to make two helper functions `push_to_stack()` and `stack_alignment_calc()` to improve readability and testing. 
-`push_to_stack()` will contain all of the `asm` instructions of actually pushing to the stack, which helps improve readability.
+`push_address_to_stack()` and `push_char_to_stack()` will contain all of the `asm` instructions of actually pushing to the stack, which helps improve readability. 
 `stack_alignment_calc()` is just a tedious calculation which deserves it's own function for testing purposes. 
 
 
