@@ -4,7 +4,6 @@
 * Dre Maharachi <dre@berkeley.edu>
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
-* Luke Dai <luke.dai@berkeley.edu>
 
 Project 1 Design Document
 =======
@@ -185,6 +184,10 @@ No synchronization is utilized during argument validation as this is done in ser
 ### Rationale
 
 The above design seems the most logically sounds as it checks for all of the possible invalid memory states that could corrupt a kernel thread during a system call. We have decoupled general argument checks and file/buffer memory checks in order to have an easier time debugging if such validations fail. The code required for implementing the validation schemes will mostly involve switch case statements, which are straightforward and easy to debug. Time complexity for a check will be at most on the order of the number of arguments passed in, since each check (null check, page check, and address space check) are all constant time checks. Even file/buffer memory checks are constant as they employ the same logic. Thus, since we can have at most 3 arguments in a syscall, argument validation operates in constant time. No extra memory is utilized as the checks are done on a pointer to the arguments themselves, which is already declared in the skeleton code for *syscall_handler*.
+
+Runtime: 
+- Part A: Converting `file_name` to list and from list to array both take linear time with respect to the number of characters in `file_name`. 
+- Part B: Pushing to the stack also takes time linear with respect to number of characters, and number of words in `file_name`.
 
 ## Part B: Syscall Routine
 
