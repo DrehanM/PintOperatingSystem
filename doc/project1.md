@@ -4,6 +4,7 @@
 * Dre Maharachi <dre@berkeley.edu>
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
+* Luke Dai <luke.dai@berkeley.edu>
 
 Project 1 Design Document
 =======
