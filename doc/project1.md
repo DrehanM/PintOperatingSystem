@@ -1,7 +1,7 @@
 ## Group Members
 
 * Christopher DeVore <chrisdevore@berkeley.edu>
-* Dre Maharachi <dre@berkeley.edu>
+* Dre Mahaarachchi <dre@berkeley.edu>
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
 
