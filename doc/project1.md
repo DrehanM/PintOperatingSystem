@@ -241,9 +241,18 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 
 /* In userprog/process.c */
 
-//Given a list of wait_status structs, return the wait_status that has the given TID. NULL if no match.
-//Implementation is omitted since it is very similar to find_word() from HW1.
-struct wait_status *find_child_ws(list *children_ws, tid_t tid);
+//Given a list of wait_status structs, return the wait_status that has the given PID. NULL if no match.
+struct wait_status *find_child_ws(list *children_ws, pid_t pid) {
+	struct list_elem *e;
+	struct wait_status *ws;
+	  	for (e = list_begin(children_ws); e->next != NULL; e = e->next) {
+	    		ws = list_entry(e, wait_status, elem);
+	    		if (ws->pid == pid) {
+	      			return ws;
+	    		}
+	 	}
+	return NULL;  
+}
 
 
 //Fully modifying process_wait
@@ -337,9 +346,9 @@ static void syscall_handler(struct intr_frame *f) {
 	switch(validation_status_code) {
 		Handle each validation_status_code according to the type of error.
 			- 0: no error -> do nothing
-			- 1: null reference ->
-			- 2: page violation -> invoke a page_fault
-			- 3: user virtual address space vilation ->
+			- 1: null reference -> kill?
+			- 2: page violation -> invoke a page_fault?
+			- 3: user virtual address space violation -> invoke a page_fault?
 	
 	switch(syscall_id) {
 		case SYS_HALT: 
