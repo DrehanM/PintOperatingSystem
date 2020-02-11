@@ -148,66 +148,21 @@ The task of implementing process control syscalls is also a two-part process. Sy
 ### Data Structures & Functions
 
 ```
-/* In userprog/syscall.c */
-
-// Returns nonzero value if any of the following validation procedures fails. 0 otherwise.
-int validate_syscall_args(uint32_t* args) {
-	uint32_t error_code;
-	error_code = in_userspace_and_notnull(args);
-	if (error_code > 0) {return error_code;}
-	error_code = is_valid_file_or_buffer(args);
-	if (error_code > 0) {return error_code;}
-	return 0;
-}
-
-// Returns 0 if all necessary arguments of the syscall are in valid userspace memory, are mapped in memory, and are not null pointers.
-// Returns 1 if any required argument for the syscall is null.
-// Returns 2 if any of the arguments are fully or partially in unmapped memory.
-// Returns 3 if any arguments are fully or partially outside of user virtual address space.
-int in_userspace_and_notnull(args);
-
-// Returns 0 if syscall is not handling a file or buffer OR if the parameter files/buffers are in valid user space, mapped correctly, and not null
-// Returns 1 if the file or buffer is a null pointer.
-// Returns 2 if the file or buffer points to unmapped memory.
-// Returns 3 if the file or buffer points to memory outside of user virtual address space.
-int is_valid_file_or_buffer(args)
-```
-
-### Algorithms
-
-Parameter validation will be implemented as a composite of two checks: verifying that the arguments are in mapped userspace and are not null and verifying if any pointers to buffers or files are addressed to mapped userspace and not null. We employ the use of two functions to do this, each returning some integer corresponding to success (0) or a specific error. These functions are then run in sequence. If either call returns nonzero, we immediately return this integer to syscall_handler.
-
-*Syscall_handler* calls *validate_syscall_args(args)* passing in ((uint32_t*) f->esp) as a parameter, since the syscall args are to be stored at and above f->esp. 
-
-Within *in_userspace_and_notnull*, all arguments are checked in 3 ways. First, we verify if the address of the argument exists in user virtual address space with is_user_vaddr(&args[i]). To ensure that the address is fully valid, we also verify that  is_user_vaddr(&args[i] + 3) is true. Second, we then check if the address exists in mapped user memory. To do this, we access the pagedir of the current thread via thread_current()->padedir and set this equal to uint32_t \*pd. Then, we call padedir_get_page(pd, &args[i]) and padedir_get_page(pd, &args[i] + 3), verifying that both of these evaluate to non-null. Finally, we access the contents of each argument verifying that args[i] != NULL. Since syscalls have varying numbers of arguments passed in, there exists a switch-case control statement to group syscall types by number of arguments passed in. This allows us to only check the addressing of first and last argument since these entries are likely to indicate if the arguments span invalid memory. All arguments are still checked for non-nullness.
-
-In a similar fashion, we employ a switch-case statement in *is_valid_file_or_buffer*, grouping cases by whether the specific syscall contains a pointer to a file, a pointer to a buffer, or neither. File pointers are stored in args[1] so we carefully check if this pointer is pointing to mapped userspace and is not null using sequential calls is_user_vaddr and pagedir_get_page on args[1] (not &args[1]). We then verify non-nullness with *args[1] != NULL. Buffer pointers are stored in args[2], so for these syscalls the same checks for file pointers mentioned before are employed on args[2] and *args[2].
-
-When *validate_syscall_args* finally returns with an integer, *syscall_handler* will elect to kill the offending process appropriate if a nonzero value is returned. Specifically, if 3 or 1 is returned, we elect to use *kill* from exception.c to terminate the process. If 2 is returned, we elect to use *page_fault* from exception.c to denote a violation on unmapped page memory. Termination of a process also involves appropriately freeing shared resources between the process's parent or its children, if any. We discuss the synchronization protocols for termination in more detail below.  If 0 is returned, we move to process the syscall normally, as outlined in Part B below.
-
-### Synchronization
-
-No synchronization is utilized during argument validation as this is done in serial and independently of other processes.
-
-### Rationale
-
-The above design seems the most logically sounds as it checks for all of the possible invalid memory states that could corrupt a kernel thread during a system call. We have decoupled general argument checks and file/buffer memory checks in order to have an easier time debugging if such validations fail. The code required for implementing the validation schemes will mostly involve switch case statements, which are straightforward and easy to debug. Time complexity for a check will be at most on the order of the number of arguments passed in, since each check (null check, page check, and address space check) are all constant time checks. Even file/buffer memory checks are constant as they employ the same logic. Thus, since we can have at most 3 arguments in a syscall, argument validation operates in constant time. No extra memory is utilized as the checks are done on a pointer to the arguments themselves, which is already declared in the skeleton code for *syscall_handler*.
-
-## Part B: Syscall Routine
-
-### Data Structures & Functions
-
-```
 /* In threads/thread.h */
 
 // Shared struct between parent and child that is created when parent calls wait on child.
 // Used to communicate child process's completion status to waiting parent.
 struct wait_status {
+	// members to be used during WAIT syscalls
 	struct semaphore dead;			//flag to signify if this thread has terminated.
 	int exit_status;			//exit status of process upon termination.
 	pid_t pid;				//process ID of the owner of this struct
 	int reference_count;			//number of processes that point to this struct
 	struct lock lock;			//lock to protect reference_count
+	
+	// members to be used during EXEC syscalls
+	struct semaphore done_loading;
+	int load_error;
 	
 	struct list_elem elem;			//underlying list element
 }
@@ -237,7 +192,9 @@ struct thread {
 void init_wait_status(struct wait_status *ws, pid) {
 	ws = malloc(sizeof(wait_status));
 	ws->pid = pid;
-	sema_init(ws->dead, 1)
+	sema_init(ws->dead, 1);
+	sema_init(ws->done_loading, 0);
+	ws->load_error = 0;
 	lock_init(ws->lock);
 	lock_acquire(ws->lock);
 	ws->reference_count = 2;
@@ -263,6 +220,14 @@ tid_t thread_create(const char *name, int priority, thread_func *function, void 
 	init_wait_status(t->wait_status);
 	list_push_front(thread_current()->children, t->wait_status->elem);
 	...
+	struct wait_status *child_ws = t->wait_status;
+	thread_unblock();
+	if (child_ws->load_error == 0) {
+		// Parent waits for child to attempt finishing load (if it hasn't already)
+		// Nothing happens if the child has already attempted to load since this semaphore will be 1 in that case
+		sema_down(&(child_ws->done_loading)); 
+	} else {
+		tid = TID_ERROR;
 	return tid;
 }
 
@@ -289,6 +254,7 @@ int process_wait(pid_t child_pid) {
 	if (child_ws == NULL) {return -1;}
 	success = sema_try_down(&(child_ws->dead));
 	if (!success) {return -1;}
+	sema_down(&(child_ws->dead));
 	int child_exit_status = child_ws->exit_status;
 	destroy_wait_status(child_ws);
 	return child_exit_status;
@@ -334,33 +300,30 @@ tid_t process_execute(const char *file_name) {
     		palloc_free_page (fn_copy);
     		return tid;
   	} 
-  	sema_down(&temporary);
   	struct wait_status *child_ws = find_child_ws(thread_current()->children, tid);
-  	switch (child_ws->dead->value) {
-    		case 2:
+  	if (child_ws->load_error == 1) {
       			//load failed
-			destroy_wait_status(child_ws);
-      			return TID_ERROR;
-    		case 1:
-      			// load success
-      			return tid;
-    		default:
-      			//something else happened
-			// PANIC
-			destroy_wait_status(child_ws);
-			return tid;
+		destroy_wait_status(child_ws);
+      		return TID_ERROR;
+    	} else {
+		// load success
+		return tid;
+      	}
   }
 
 //Partially modifying start_process
-//If the load fails, we up the semaphore and exit the child process.
-//If success, we up the semaphore.
+//If the load fails, we set the load_error to 1, up the done_loading semaphore, and exit the child process.
+//If success, we up the done_loading semaphore only.
 static void start_process(void *file_name_) {
 	...
+	struct wait_status *ws = thread_current()->wait_status;
 	if (!success) {
-		sema_up(&temporary);
+		ws->load_error = 1;
+		sema_up(&(ws->done_loading));
 		thread_exit();
+	} else {
+		sema_up(&(ws->done_loading));
 	}
-	sema_up(&temporary); 
 	...	
 	
 /* In userprog/syscall.c */
@@ -397,7 +360,6 @@ static void syscall_handler(struct intr_frame *f) {
 	}
 			
 			
-
 ```
 ### Algorithms and Synchronization
 Assuming we have validated syscall arguments correctly, we can process the various syscalls and their arguments appropriately. Return values will be stored in f->eax, as is convention.
@@ -409,7 +371,11 @@ Call *shutdown_power_off()*, which shuts down the system if we are running QEMU 
 The WAIT syscall requires careful coordination of shared resources between the calling parent and the target child. As seen in the code above, we utilize the *wait_status* struct, which exists as a member of each thread. A oarent can access their children's wait_status structs by iterating through the list of wait_status structs that exist under the struct member *children*. When a process calls wait of a specific PID/TID, we iterate through the children to find the wait_status struct of the target child. If found, the current parent process then downs the semaphore *dead* in the child's wait_status and goes to sleep until the child willingly exists or is terminated by the kernel. If the target PID/TID is not found OR the parent has already called WAIT on the target child, the process_wait() call and, subsequently, the WAIT syscall returns with value -1. After the child has died and has appropriately set the dead semaphore up such that the parent can wake up. The dead child's exit status is then taken from the shared wait_status struct, ready to be returned by process_wait() and then the WAIT syscall. The same wait_status struct is then destroyed and removed from the children list. We also free all of the child's resources, including its thread and pagedir. Finally, we return the exit status. Some edge cases to watch out are:
 - premature termination of the parent, before the child returns: in this situation, the parent will decrement the reference_count variables in each of its children's wait_status structs to signify the parent's death. Thus, when each of the children die, they will destroy their own wait_statuses on behalf of the dead parent when the reference_count reaches 0.
 #### EXEC:
-The EXEC syscall will ensure that the parent calls process_execute(args[1]) and it will wait for the returned child pid. If pid == -1, then execution failed. We must ensure synchronization of this call between the parent and child. In particular, since *load*, called in *start_process* is called by the child thread after it has been unblocked, it is essential that the parent waits until the child has attempted to load. We down a semaphore as the parent after the child thread has been created but before the child process has loaded its user program. This way, the child thread can attempt to load the user program. If successful, the child process will return from *start_process* normally, uping the semaphore that the parent down'd. If the child process fails to load, then the semaphore is up'd before the child calls *thread_exit*. After the child process has attempted to load and the parent wakes up, the parent can check the child's wait_status semaphore value. This value is initalized to 1, before a WAIT is ever invoked. However, during thread_exit, this value is incremented by 1. This means that the wait_status semaphore value can either be a 1 (if the child is exiting after the parent calls WAIT) or a 2 (when the child fails to load and exits before wait is ever called). If the value of the child's wait_status semaphore is 2 when the parent wakes up after an exec call, then the parent knows the child has died. Thus, we return -1 from the EXEC syscall. Otherwise, we return the value retured from *process_execute*, which is either the child's PID if it survives and loads properly, or -1 (PID_ERROR) if the child cannot properly allocate memory. Again, we store the returned PID or PID_ERROR in f->eax.
+The EXEC syscall will ensure that the parent calls process_execute(args[1]), where args[1] is an executable's file name, and it will wait for the returned child pid. If pid == -1, then execution failed. We must ensure synchronization of this call between the parent and child. In particular, since we unblock the newly allocated child thread in *thread_create*, it is possible for the child thread to execute before the parent's call to *process_execute* returns. Thus, we have included two pieces of data (semaphore wait_status->done_loading and int wait_status->load_error) to handle the various context switch cases that can occur once the child thread is put on the ready queue. We initialize load_error to 0 and set it to 1 if and only if the child's call to *load* in *start_process* fails. We initialize semaphore wait_status->done_loading to 0, and only the parent thread can call down on this semaphore while the child can only call up on it. We enumerate the context switch situations below and verify correctness. We designate a pointer to the child's wait_status prior to *thread_unblock* being invoked:
+- case 1: parent calls *thread_unblock*, context switch happens, child loads its process successfully, ups done_loading semaphore, switch to parent
+	- When the kernel switches back to the parent, it immediately checks if the child's wait_status->load_error == 0. Since this is true (as the child's load was successful), parent downs the done_loading semaphore, which will do nothing since its value has been set to 1 by the child. The parent will eventually exit *thread_create* and observe that load_error still is 0 in process_execute, signifying that the child loaded successfully. We can return the child's TID.
+- case 2: parent calls *thread_unblock*, context switch happens, childs fails the load, sets load_error to 1, ups done_loading, exits, context switch back to parent.
+- In this case, which has already been upis called by the child thread after it has been unblocked, it is essential that the parent waits until the child has attempted to load. We down a semaphore as the parent after the child thread has been created but before the child process has loaded its user program. This way, the child thread can attempt to load the user program. If successful, the child process will return from *start_process* normally, uping the semaphore that the parent down'd. If the child process fails to load, then the semaphore is up'd before the child calls *thread_exit*. After the child process has attempted to load and the parent wakes up, the parent can check the child's wait_status semaphore value. This value is initalized to 1, before a WAIT is ever invoked. However, during thread_exit, this value is incremented by 1. This means that the wait_status semaphore value can either be a 1 (if the child is exiting after the parent calls WAIT) or a 2 (when the child fails to load and exits before wait is ever called). If the value of the child's wait_status semaphore is 2 when the parent wakes up after an exec call, then the parent knows the child has died. Thus, we return -1 from the EXEC syscall. Otherwise, we return the value retured from *process_execute*, which is either the child's PID if it survives and loads properly, or -1 (PID_ERROR) if the child cannot properly allocate memory. Again, we store the returned PID or PID_ERROR in f->eax.
 #### Minor modifications to EXIT and process_exit:
 To accomodate the use of wait_status synchronization objects, a process will up its wait_status->dead semaphore and decrement all of its shared reference_count variables before exiting. This logic has been added to the end of *process_exit*.
 		
