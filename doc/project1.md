@@ -376,6 +376,7 @@ The EXEC syscall will ensure that the parent calls process_execute(args[1]), whe
 	- When the kernel switches back to the parent, it immediately checks if the child's wait_status->load_error == 0. Since this is true (as the child's load was successful), parent downs the done_loading semaphore, which will do nothing since its value has been set to 1 by the child. The parent will eventually exit *thread_create* and observe that load_error still is 0 in process_execute, signifying that the child loaded successfully. We can return the child's TID.
 - case 2: parent calls *thread_unblock*, context switch happens, childs fails the load, sets load_error to 1, ups done_loading, exits, context switch back to parent.
 - In this case, which has already been upis called by the child thread after it has been unblocked, it is essential that the parent waits until the child has attempted to load. We down a semaphore as the parent after the child thread has been created but before the child process has loaded its user program. This way, the child thread can attempt to load the user program. If successful, the child process will return from *start_process* normally, uping the semaphore that the parent down'd. If the child process fails to load, then the semaphore is up'd before the child calls *thread_exit*. After the child process has attempted to load and the parent wakes up, the parent can check the child's wait_status semaphore value. This value is initalized to 1, before a WAIT is ever invoked. However, during thread_exit, this value is incremented by 1. This means that the wait_status semaphore value can either be a 1 (if the child is exiting after the parent calls WAIT) or a 2 (when the child fails to load and exits before wait is ever called). If the value of the child's wait_status semaphore is 2 when the parent wakes up after an exec call, then the parent knows the child has died. Thus, we return -1 from the EXEC syscall. Otherwise, we return the value retured from *process_execute*, which is either the child's PID if it survives and loads properly, or -1 (PID_ERROR) if the child cannot properly allocate memory. Again, we store the returned PID or PID_ERROR in f->eax.
+
 #### Minor modifications to EXIT and process_exit:
 To accomodate the use of wait_status synchronization objects, a process will up its wait_status->dead semaphore and decrement all of its shared reference_count variables before exiting. This logic has been added to the end of *process_exit*.
 		
@@ -405,97 +406,119 @@ Finally, time/space complexity for each syscall are as follows:
 # Task 3: File Operation Syscalls
 
   All file operation syscalls are handled by the syscall_handler function in syscall.c. Thus, to know if a user is calling a  file operation, we will check if args[0] is equal to any of the following: {SYS_CREATE, SYS_REMOVE, SYS_OPEN, SYS_FILESIZE, SYS_READ, SYS_WRITE, SYS_SEEK, SYS_TELL, SYS_CLOSE}. Once we identify which file operation a user is calling we will call the file_operation_handler function (define below) which handles synchronization and executes the desired file operation. This function will then use Pintos file system to perform the requested operation.
-    To synchronize the file sytem operations we will use a global lock or semaphore with an initial value of 1. Before executing the file operation, we will call semaphore.down() inside the file_operation_handler to attempt to decrement the integer. If succesful, we will execute the file operation. Otherwise, the thread will block until the value is positive, and then unblock and decrememt the value. This ensures that no file system functions are called concurrently.
+  To synchronize the file sytem operations we will use a global lock or semaphore with an initial value of 1. Before executing the file operation, we will call semaphore.down() inside the file_operation_handler to attempt to decrement the integer. If succesful, we will execute the file operation. Otherwise, the thread will block until the value is positive, and then unblock and decrememt the value. This ensures that no file system functions are called concurrently.
   
- ## Data Structures and Functions
+## Data Structures and Functions
  
- This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
- static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
- 
- 
- Below we describe the implementation of each of the file operations:
- ### Create
- Function:
- bool create(const char * file, unsiged initial_size){}
-	
- This function calls the filesys_create(const char * name, off_t initial_size) function in filesys.c. The parameters for filesys_create consist of the file name (* file) and file size (initial_size) provided by the user. create will return whatever filesys_create returns. 
- 
- ### Remove
- Function:
- bool remove(const char * file) {}
-	
- This function calls the filesys_remove(const char * name) function in filesys.c. The parameter for filesys_remove is the name of the file (* file) provided by the user. remove will return whatever filesys_create returns. 
- 
- 
- ### Open
- Function:
- bool open(const char * file) {}
-	
-This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, 
+
+Function:
+```
+static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
+```
+This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
+
+
+### Hashmap
+use a dynamically reallocating hashmap @ https://github.com/robertkety/dataStructures/blob/master/hashMap.c
+
+Function:
+```
+*file get_file_from_fd(int fd){} 
+```
+calls our global hashmap and gets the corresponding file pointer, or NULL if there isn't one
+
+Below we describe the implementation of each of the file operations:
+### Create
+Function:
+```
+bool create(const char * file, unsiged initial_size){}
+```
+This function calls the filesys_create(const char * name, off_t initial_size) function in filesys.c. The parameters for filesys_create consist of the file name (* file) and file size (initial_size) provided by the user. create will return whatever filesys_create returns. 
+
+### Remove
+Function:
+```
+bool remove(const char * file) {}
+```
+This function calls the filesys_remove(const char * name) function in filesys.c. The parameter for filesys_remove is the name of the file (* file) provided by the user. remove will return whatever filesys_create returns. 
+
+
+### Open
+Function:
+```
+int open(const char * file) {}
+```
+This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, we return the file descriptor number.
   
  
- ### Filesize
- Function:
- int filesize(int fd) {} 
- 
- This function calls file_length (struct file * file) in file.c.  
- 
- 
- ### Read
- Function:
- int read(int fd, void * buffer, unsiged size) {}
- 
- This function calls file_read (struct file * file, void * buffer, off_t size) in file.c.
- 
- ### Write
- Function:
- int write(int fd, void * buffer, unsiged size) {}
- 
- This function calls file_write (struct file * file, const void * buffer, off_t size) in file.c.
- 
- ### Seek
- Function:
- void seek(int fd, unsiged position) {} 
- 
- This function calls file_seek (struct file * file, off_t new_pos) in file.c. 
- 
- 
- ### Tell
- Function:
- unsiged tell(int fd) {}
- 
- This function calls file_tell (struct file * file) in file.c.
- 
- ### Close
- Function: 
- void close (int fd) {}
- 
- This function calls file_close (struct file * file) in file.c.
- 
- ## Algorithms
- 
- ## Synchronization
- As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function file_operation_handler will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
- 
- ## Rationale 
+### Filesize
+Function:
+```
+int filesize(int fd) {} 
+```
+Calls `get_file_from_fd(fd)` to get the `*file`, then uses this to call `file_length (struct file * file)` in file.c.  
+
+
+### Read
+Function:
+```
+int read(int fd, void * buffer, unsiged size) {}
+```
+Calls `get_file_from_fd(fd)` to get the `*file`. This function then calls file_read (struct file * file, void * buffer, off_t size) in file.c.
+
+### Write
+Function:
+```
+int write(int fd, void * buffer, unsiged size) {}
+```
+Calls `get_file_from_fd(fd)` to get the `*file`. This function then calls file_write (struct file * file, const void * buffer, off_t size) in file.c.
+
+### Seek
+Function:
+```
+void seek(int fd, unsiged position) {} 
+```
+Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_seek (struct file * file, off_t new_pos) in file.c. 
+
+
+### Tell
+Function:
+```
+unsiged tell(int fd) {}
+```
+Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_tell (struct file * file) in file.c.
+
+### Close
+Function: 
+```
+void close (int fd) {}
+```
+Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the hashmap.
+
+## Algorithms
+
+## Synchronization
+As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function file_operation_handler will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
+
+## Rationale 
   
 
 # Additional Questions
  
- ## 1) 
- A test case that makes a syscall with an invalid stack pointer is sc-boundary-3. 
+## 1) 
+A test case that makes a syscall with an invalid stack pointer is sc-boundary-3. 
  
- ```
- void
+```
+void
 test_main (void)
 {
-  char *p = get_bad_boundary ();
-  p--;
-  *p = 100;
+	char *p = get_bad_boundary ();
+	p--;
+	*p = 100;
 
-  /* Invoke the system call. */
-  asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));
-  fail ("should have killed process");
+	/* Invoke the system call. */
+	asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));
+	fail ("should have killed process");
 }
 ```
 
