@@ -545,7 +545,7 @@ test_main (void)
 }
 ```
 
-In this test the pointer p is set with `char *p = get_bad_boundary ();` to the highest address such that previous values are within valid memory in the bss segment, and p points to the first invalid location. `p--;` then decrements this pointer so the first byte it points to is within the valid memory range, but the remainder is still outside this range. With `asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));` a syscall  is attempted using p as the value for the stack pointer. Since the final bytes of the pointer are not wihtin valid memory, this is an invalid pointer and the process is killed.
+In this test the pointer p is set with `char *p = get_bad_boundary ();` to the highest address such that previous values are within valid memory in the bss segment, and p points to the first invalid location. `p--;` then decrements this pointer so that it points to the last byte within valid memory. With `asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));` a syscall  is attempted using p as the value for the stack pointer. Since this stack pointer is interpreted as a pointer to a four byte region, one byte is within valid memory but the final bytes are outside of it. As a result, this is an invalid pointer and the process is killed.
 
 ## 2)
 sc-bad-arg is a test case that attempts a syscall with a valid stack pointer, however it fails because it tries to access values outside of valid memory. 
