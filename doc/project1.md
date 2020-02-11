@@ -412,7 +412,7 @@ Finally, time/space complexity for each syscall are as follows:
 # Task 3: File Operation Syscalls
 
   All file operation syscalls are handled by the syscall_handler function in syscall.c. Thus, to know if a user is calling a  file operation, we will check if args[0] is equal to any of the following: {SYS_CREATE, SYS_REMOVE, SYS_OPEN, SYS_FILESIZE, SYS_READ, SYS_WRITE, SYS_SEEK, SYS_TELL, SYS_CLOSE}. Once we identify which file operation a user is calling we will call the file_operation_handler function (define below) which handles synchronization and executes the desired file operation. This function will then use Pintos file system to perform the requested operation.
-  To synchronize the file sytem operations we will use a global lock or semaphore with an initial value of 1. Before executing the file operation, we will call semaphore.down() inside the file_operation_handler to attempt to decrement the integer. If succesful, we will execute the file operation. Otherwise, the thread will block until the value is positive, and then unblock and decrememt the value. This ensures that no file system functions are called concurrently.
+  To synchronize the file sytem operations we will use a global lock with. Before executing the file operation, we will call lock_acquire() on the lock inside the file_operation_handler. If succesful, we will execute the file operation. Otherwise, the thread will block until the lock has been released by the holder with lock_release(). This ensures that no file system functions are called concurrently.
   To ensure that the executable file of a running process is not modified we will make use of file_deny_write(). More specifically, immediately after the executable file is opened in the load function in process.c, we will call file_deny_write() on that file to disable write access. After the file is loaded, the load function calls file_close() which enables write access again on the file. Once this file is loaded into memory, it is impossible to write to it since it is in a restricted section of memory (Code). 
   
 ## Data Structures and Functions
@@ -422,12 +422,13 @@ Function:
 ```
 static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
 ```
-This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
+This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. Before a file operation is called this function attempts to acquire the lock, if succesfull it executes the file operation, otherwise, it waits until the lock is released. After the file operation is completed, it releases the lock.
 
-Global Semaphore:
+Global Lock:
+This global lock will de defined in syscall.c as follows:
 ```
-static struct semaphore temporary;
-sema_init (&temporary, 1);
+static struct lock global_lock;
+lock_init(&global_lock)
 ```
 
 
@@ -533,12 +534,12 @@ Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close 
 
 ## Algorithms
 
+
+
 ## Synchronization
 As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function `file_operation_handler` will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
 
 ## Rationale 
-  
-
 # Additional Questions
  
 ## 1) 
