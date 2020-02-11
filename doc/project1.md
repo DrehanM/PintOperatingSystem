@@ -416,7 +416,6 @@ Finally, time/space complexity for each syscall are as follows:
   To ensure that the executable file of a running process is not modified we will make use of file_deny_write(). More specifically, immediately after the executable file is opened in the load function in process.c, we will call file_deny_write() on that file to disable write access. After the file is loaded, the load function calls file_close() which enables write access again on the file. Once this file is loaded into memory, it is impossible to write to it since it is in a restricted section of memory (Code). 
   
 ## Data Structures and Functions
- 
 
 Function:
 ```
@@ -429,6 +428,12 @@ This global lock will de defined in syscall.c as follows:
 ```
 static struct lock global_lock;
 lock_init(&global_lock)
+```
+
+File Descriptor Counter:
+This counter is used to keep track of the next file descriptor number. It is initiliazed to 2 since file descriptors 0 (STDIN_FILENO) and 1 (STDOUT_FILENO) are reserved for the console. 
+```
+static uint file_descriptor_counter = 2;
 ```
 
 
@@ -485,8 +490,7 @@ Function:
 ```
 int open(const char * file) {}
 ```
-This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, we return the file descriptor number. We also add the file descriptor and the corresponding pointer to `thread_current->fd_map`.
-  
+This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a NULL pointer, open will return -1. Otherwise, we set the file descriptor number of the returned file pointer to be equal to file_descriptor_counter. We do this by adding an entry to the hashmap `thread_current->fd_map` where file_description_counter is the key and the returned file pointer is the value. Finally, we increment file_description_counter by 1 and return file_description_counter - 1 (the file descriptor of the file that was just opened) to the user. 
  
 ### Filesize
 Function:
@@ -533,13 +537,15 @@ void close (int fd) {}
 Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the threads hashmap.
 
 ## Algorithms
-
+	
 
 
 ## Synchronization
 As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function `file_operation_handler` will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
 
 ## Rationale 
+	Each thread has its own hash map 
+	
 # Additional Questions
  
 ## 1) 
