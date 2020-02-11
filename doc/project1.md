@@ -187,7 +187,7 @@ struct thread {
 }
 	
 
-//Create and allocate memory for a new wait_status struct for a new process
+// Create and allocate memory for a new wait_status struct for a new process
 // Initialize the dead semaphore and reference_count lock
 void init_wait_status(struct wait_status *ws, pid) {
 	ws = malloc(sizeof(wait_status));
@@ -273,6 +273,7 @@ void decrement_and_destroy_if_zero(struct wait_status *ws) {
 //Decrement all reference_count variables shared by the current thread and cur's parent and cur's children.
 //Sema up on the current threads wait_status->dead semaphore.
 void decrement_all_references(struct wait_status *ws) {
+	struct thread *cur = thread_current();
 	decrement_and_destroy_if_zero(ws);
 	struct wait_status *child_ws;
 	for (e = list_begin(cur->children); e->next != NULL; e = e->next) {
@@ -302,8 +303,7 @@ tid_t process_execute(const char *file_name) {
   	} 
   	struct wait_status *child_ws = find_child_ws(thread_current()->children, tid);
   	if (child_ws->load_error == 1) {
-      			//load failed
-		destroy_wait_status(child_ws);
+      		//load failed
       		return TID_ERROR;
     	} else {
 		// load success
@@ -349,6 +349,7 @@ static void syscall_handler(struct intr_frame *f) {
 			thread_exit();
 		case SYS_EXEC:
 			pid_t pid;
+			file_deny_write(
 			pid = process_execute(args[1]);
 			f->eax = pid;		
 		case SYS_WAIT:
@@ -372,10 +373,15 @@ The WAIT syscall requires careful coordination of shared resources between the c
 - premature termination of the parent, before the child returns: in this situation, the parent will decrement the reference_count variables in each of its children's wait_status structs to signify the parent's death. Thus, when each of the children die, they will destroy their own wait_statuses on behalf of the dead parent when the reference_count reaches 0.
 #### EXEC:
 The EXEC syscall will ensure that the parent calls process_execute(args[1]), where args[1] is an executable's file name, and it will wait for the returned child pid. If pid == -1, then execution failed. We must ensure synchronization of this call between the parent and child. In particular, since we unblock the newly allocated child thread in *thread_create*, it is possible for the child thread to execute before the parent's call to *process_execute* returns. Thus, we have included two pieces of data (semaphore wait_status->done_loading and int wait_status->load_error) to handle the various context switch cases that can occur once the child thread is put on the ready queue. We initialize load_error to 0 and set it to 1 if and only if the child's call to *load* in *start_process* fails. We initialize semaphore wait_status->done_loading to 0, and only the parent thread can call down on this semaphore while the child can only call up on it. We enumerate the context switch situations below and verify correctness. We designate a pointer to the child's wait_status prior to *thread_unblock* being invoked:
-- case 1: parent calls *thread_unblock*, context switch happens, child loads its process successfully, ups done_loading semaphore, switch to parent
-	- When the kernel switches back to the parent, it immediately checks if the child's wait_status->load_error == 0. Since this is true (as the child's load was successful), parent downs the done_loading semaphore, which will do nothing since its value has been set to 1 by the child. The parent will eventually exit *thread_create* and observe that load_error still is 0 in process_execute, signifying that the child loaded successfully. We can return the child's TID.
-- case 2: parent calls *thread_unblock*, context switch happens, childs fails the load, sets load_error to 1, ups done_loading, exits, context switch back to parent.
-- In this case, which has already been upis called by the child thread after it has been unblocked, it is essential that the parent waits until the child has attempted to load. We down a semaphore as the parent after the child thread has been created but before the child process has loaded its user program. This way, the child thread can attempt to load the user program. If successful, the child process will return from *start_process* normally, uping the semaphore that the parent down'd. If the child process fails to load, then the semaphore is up'd before the child calls *thread_exit*. After the child process has attempted to load and the parent wakes up, the parent can check the child's wait_status semaphore value. This value is initalized to 1, before a WAIT is ever invoked. However, during thread_exit, this value is incremented by 1. This means that the wait_status semaphore value can either be a 1 (if the child is exiting after the parent calls WAIT) or a 2 (when the child fails to load and exits before wait is ever called). If the value of the child's wait_status semaphore is 2 when the parent wakes up after an exec call, then the parent knows the child has died. Thus, we return -1 from the EXEC syscall. Otherwise, we return the value retured from *process_execute*, which is either the child's PID if it survives and loads properly, or -1 (PID_ERROR) if the child cannot properly allocate memory. Again, we store the returned PID or PID_ERROR in f->eax.
+- case 1: parent calls thread_unblock -> switch to child, child fails loading its process, sets load_error = 1, ups done_loading, child thread exits -> switch to parent, downs done_loading (but this does nothing since it was positive), returns from *thread_create* with child tid, check that load_error == 1, return TID_ERROR
+- case 2: parent calls thread_unblock -> switch to child, child fails loading its process, -> switch to parent, parent downs done_loading and goes to sleep -> switch to child, sets load_error = 1, ups done_loading, exits -> parents wakes up, returns from *thread_create* with child tid, check that load_error = 1, return TID_ERROR
+- case 3: parent calls thread_unblock -> switch to child, child succeeds loading, ups done_loading -> switch to parent ...
+	- This case is also handled correctly since the parent will see eventually see that load_error == 1, and successfully return the child TID.
+- case 4: parent calls thread_unblock, downs done_loading, and goes to sleep -> child process will finish its load and modify load_error as needed before the parent wakes up. 
+	- The parent will eventually know if its child failed or succeeded since load_error is set correctly by the child.
+In general, we have imposed the following ordering: Parent unblocks child, child attempts to load itself, parent checks status of child's load, parent returns child TID or TID_ERROR based on the result of the child's load.
+
+TID is subsequently returned to the *syscall_handler* and cast to pid_t. Again, we store the returned PID or PID_ERROR in f->eax.
 
 #### Minor modifications to EXIT and process_exit:
 To accomodate the use of wait_status synchronization objects, a process will up its wait_status->dead semaphore and decrement all of its shared reference_count variables before exiting. This logic has been added to the end of *process_exit*.
