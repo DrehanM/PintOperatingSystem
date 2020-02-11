@@ -516,7 +516,7 @@ Function:
 ```
 void close (int fd) {}
 ```
-Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the hashmap.
+Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the threads hashmap.
 
 ## Algorithms
 
