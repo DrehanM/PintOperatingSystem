@@ -506,6 +506,7 @@ Function:
 int read(int fd, void * buffer, unsiged size) {}
 ```
 Calls `get_file_from_fd(fd)` to get the `*file`. This function then calls file_read (struct file * file, void * buffer, off_t size) in file.c.
+If fd is equal to zero, we will read from the keyboard using input_getc(). We will read `size` bytes, which means we will call input_getc() `size` amount of times. Each time we read a character (1 byte) we will save it into the provided buffer. Finally, we will return the number of bytes read from the keyboard. 
 
 ### Write
 Function:
@@ -513,13 +514,14 @@ Function:
 int write(int fd, void * buffer, unsiged size) {}
 ```
 Calls `get_file_from_fd(fd)` to get the `*file`. This function then calls file_write (struct file * file, const void * buffer, off_t size) in file.c.
+If fd is equal to one, we will call putbuf(buffer, size) and return size. If size is larger than 200 bytes, we will call putbuf(buffer, size) on increments of 200 bytes until size is reached. Each time we call putbuf we would increase the pointer buffer by 200. 
 
 ### Seek
 Function:
 ```
 void seek(int fd, unsiged position) {} 
 ```
-Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_seek (struct file * file, off_t new_pos) in file.c. 
+Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_seek(struct file * file, off_t new_pos) in file.c. 
 
 
 ### Tell
@@ -537,14 +539,19 @@ void close (int fd) {}
 Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the threads hashmap.
 
 ## Algorithms
-	
+All of the file operation functions will check that fd is greater than or equal to two. The only exceptions to this are read and write. 
 
 
 ## Synchronization
-As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function `file_operation_handler` will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
+As mentioned above, to prevent file system functions from being called concurrently we will use a global lock. The function `file_operation_handler` will be responsible for acquiring and releasing the lock before and after a file operation is executed. Before a file operation is called, we will attempt to acquire the lock and when the operation terminates we will release the lock. This will prevent concurrent calls to the file system. No resources are shared between the thread since each has a different hashmap. 
 
 ## Rationale 
-	Each thread has its own hash map 
+	
+HashMap vs list
+
+Each thread has its own hashmap versus a global hashmap. 
+
+Time complexity-> constant time since accessing the hashmaps takes constant time. 
 	
 # Additional Questions
  
