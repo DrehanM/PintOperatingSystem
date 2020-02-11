@@ -443,44 +443,68 @@ Finally, time/space complexity for each syscall are as follows:
   
  ## Data Structures and Functions
  
- ```
  This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
  static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
- ```
+ 
+ 
  Below we describe the implementation of each of the file operations:
  ### Create
- 	Function:
-	bool create(const char *file, unsiged initial_size){}
+ Function:
+ bool create(const char * file, unsiged initial_size){}
 	
- 	This function calls the filesys_create(const char *name, off_t initial_size) function in filesys.c. The parameters for filesys_create consist of the file name (*file) and file size (initial_size) provided by the user. create will return the 
+ This function calls the filesys_create(const char * name, off_t initial_size) function in filesys.c. The parameters for filesys_create consist of the file name (* file) and file size (initial_size) provided by the user. create will return whatever filesys_create returns. 
  
  ### Remove
- 	Function:
-	bool remove(const char *file) {}
+ Function:
+ bool remove(const char * file) {}
 	
-	This function calls the filesys_o
+ This function calls the filesys_remove(const char * name) function in filesys.c. The parameter for filesys_remove is the name of the file (* file) provided by the user. remove will return whatever filesys_create returns. 
  
  
  ### Open
- 
+ Function:
+ bool open(const char * file) {}
+	
+This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, 
+  
  
  ### Filesize
+ Function:
+ int filesize(int fd) {} 
+ 
+ This function calls file_length (struct file * file) in file.c.  
  
  
  ### Read
+ Function:
+ int read(int fd, void * buffer, unsiged size) {}
  
+ This function calls file_read (struct file * file, void * buffer, off_t size) in file.c.
  
  ### Write
+ Function:
+ int write(int fd, void * buffer, unsiged size) {}
  
+ This function calls file_write (struct file * file, const void * buffer, off_t size) in file.c.
  
  ### Seek
+ Function:
+ void seek(int fd, unsiged position) {} 
+ 
+ This function calls file_seek (struct file * file, off_t new_pos) in file.c. 
  
  
  ### Tell
+ Function:
+ unsiged tell(int fd) {}
  
+ This function calls file_tell (struct file * file) in file.c.
  
  ### Close
+ Function: 
+ void close (int fd) {}
  
+ This function calls file_close (struct file * file) in file.c.
  
  ## Algorithms
  
