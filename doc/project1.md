@@ -154,15 +154,15 @@ The task of implementing process control syscalls is also a two-part process. Sy
 // Used to communicate child process's completion status to waiting parent.
 struct wait_status {
 	// members to be used during WAIT syscalls
-	struct semaphore dead;			//flag to signify if this thread has terminated.
-	int exit_status;			//exit status of process upon termination.
-	pid_t pid;				//process ID of the owner of this struct
+	struct semaphore dead;			// 1 == dead, 0 == alive
+	int exit_status;			    //exit status of process upon termination.
+	pid_t pid;				        //process ID of the owner of this struct
 	int reference_count;			//number of processes that point to this struct
-	struct lock lock;			//lock to protect reference_count
+	struct lock lock;			    //lock to protect reference_count
 	
 	// members to be used during EXEC syscalls
-	struct semaphore done_loading;
-	int load_error;
+	struct semaphore done_loading;  // 1 == done, 0 == still loading
+	int load_error;                 // 0 == good, anything else is a load error. Isn't ready to be accessed until done_loading is 1
 	
 	struct list_elem elem;			//underlying list element
 }
