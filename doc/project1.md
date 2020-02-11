@@ -514,4 +514,39 @@ This function calls the filesys_open(const char * name) function in filesys.c. T
  ## Rationale 
   
 
+# Additional Questions
  
+ ## 1) 
+ A test case that makes a syscall with an invalid stack pointer is sc-boundary-3. 
+ 
+ ```
+ void
+test_main (void)
+{
+  char *p = get_bad_boundary ();
+  p--;
+  *p = 100;
+
+  /* Invoke the system call. */
+  asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));
+  fail ("should have killed process");
+}
+```
+
+In this test the pointer p is set with `char *p = get_bad_boundary ();` to the highest address such that previous values are within valid memory in the bss segment, and p points to the first invalid location. `p--;` then decrements this pointer so the first byte it points to is within the valid memory range, but the remainder is still outside this range. With `asm volatile ("movl %0, %%esp; int $0x30" : : "g" (p));` a syscall  is attempted using p as the value for the stack pointer. Since the final bytes of the pointer are not wihtin valid memory, this is an invalid pointer and the process is killed.
+
+## 2)
+sc-bad-arg is a test case that attempts a syscall with a valid stack pointer, however it fails because it tries to access values outside of valid memory. 
+
+```
+test_main (void)
+{
+  asm volatile ("movl $0xbffffffc, %%esp; movl %0, (%%esp); int $0x30"
+                : : "i" (SYS_EXIT));
+  fail ("should have called exit(-1)");
+}
+```
+
+The instruction `movl $0xbffffffc, %%esp` directs the stack pointer to `0xbffffffc`, which is four bytes away from the base of user memory, and then sets its value to the call number for SYS_EXIT with `movl %0, (%%esp)`. `int $0x30` then performs the interrupt to kernel. On SYS_EXIT an argument is expected prior to the call number which would be at `0xc0000000` at the base of user memory. Since this location is outside of valid memory, the process is terminated. 
+
+## 3)
