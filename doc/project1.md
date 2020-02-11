@@ -419,13 +419,36 @@ This function synchronizes all the file_operations. It receives which file_opera
 
 
 ### Hashmap
+Add a hashmap to each thread, which maps `fd -> *file`
 use a dynamically reallocating hashmap @ https://github.com/robertkety/dataStructures/blob/master/hashMap.c
+
+```
+struct thread {
+	tid_t tid;  			    // Thread identifier.
+	enum thread_status status;          // Thread state.
+	char name[16];                      // Name (for debugging purposes).
+	uint8_t *stack;                     // Saved stack pointer.
+	int priority;                       // Priority.
+	struct list_elem allelem;           // List element for all threads list.
+	
+	// Adding Process-related members
+	pid_t pid;			    // Process identifier. Same value as TID.
+	uint32_t *pagedir;		    // Page directory. Already existing in skeleton code.
+	struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
+	struct list children;		    // List of wait_status objects shared by this thread and its children.
+	
+	struct list_elem elem; 
+	unsigned magic;
+
+	hashmap fd_map; // file descriptor : *file map
+}
+```
 
 Function:
 ```
 *file get_file_from_fd(int fd){} 
 ```
-calls our global hashmap and gets the corresponding file pointer, or NULL if there isn't one
+gets `thread_current->fd_map` and gets the corresponding file pointer, or NULL if there isn't one
 
 Below we describe the implementation of each of the file operations:
 ### Create
@@ -448,7 +471,7 @@ Function:
 ```
 int open(const char * file) {}
 ```
-This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, we return the file descriptor number.
+This function calls the filesys_open(const char * name) function in filesys.c. The parameter for filesys_open is the name of the file (* file) provided by the user. If filesys_open returns a Null pointer, open will return -1. Otherwise, we return the file descriptor number. We also add the file descriptor and the corresponding pointer to `thread_current->fd_map`.
   
  
 ### Filesize
@@ -498,7 +521,7 @@ Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close 
 ## Algorithms
 
 ## Synchronization
-As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function file_operation_handler will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
+As mentioned above, to prevent file system functions from being called concurrently we will use a global sempahore with an initial value of 1. The function `file_operation_handler` will be responsible for increasing (semaphore.up()) and decreasing (semaphore.down()) the value of the semaphore. Before a file operation is called, we will call semaphore.down() and when the operation terminates we will call semaphore.up().
 
 ## Rationale 
   
