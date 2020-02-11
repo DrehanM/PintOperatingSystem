@@ -413,7 +413,7 @@ Finally, time/space complexity for each syscall are as follows:
 
   All file operation syscalls are handled by the syscall_handler function in syscall.c. Thus, to know if a user is calling a  file operation, we will check if args[0] is equal to any of the following: {SYS_CREATE, SYS_REMOVE, SYS_OPEN, SYS_FILESIZE, SYS_READ, SYS_WRITE, SYS_SEEK, SYS_TELL, SYS_CLOSE}. Once we identify which file operation a user is calling we will call the file_operation_handler function (define below) which handles synchronization and executes the desired file operation. This function will then use Pintos file system to perform the requested operation.
   To synchronize the file sytem operations we will use a global lock or semaphore with an initial value of 1. Before executing the file operation, we will call semaphore.down() inside the file_operation_handler to attempt to decrement the integer. If succesful, we will execute the file operation. Otherwise, the thread will block until the value is positive, and then unblock and decrememt the value. This ensures that no file system functions are called concurrently.
-  To ensure that the executable file of a running process is not modified we will make use of file_deny_write(). More specifically, immediately after the executable file is opened in the load function in process.c, we will call file_deny_write() on that file to disable write access. After the file is loaded, the load function calls file_close() which enables write access again on the file. Once this file is loaded into memory, it is impossible to write to it since it is in a restricted section of memory (Code).
+  To ensure that the executable file of a running process is not modified we will make use of file_deny_write(). More specifically, immediately after the executable file is opened in the load function in process.c, we will call file_deny_write() on that file to disable write access. After the file is loaded, the load function calls file_close() which enables write access again on the file. Once this file is loaded into memory, it is impossible to write to it since it is in a restricted section of memory (Code). 
   
 ## Data Structures and Functions
  
@@ -424,9 +424,15 @@ static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
 ```
 This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
 
+Global Semaphore:
+```
+static struct semaphore temporary;
+sema_init (&temporary, 1);
+```
+
 
 ### Hashmap
-Add a hashmap to each thread, which maps `fd -> *file`
+Add a hashmap to each thread, which maps `fd -> *file`. This hashmap will store the file descriptors of all the files a user has opened. Each file descriptor maps to a file pointer which can be used to call PINTOS file system operations in file.c. Each thread/process has its own hashmap of file descriptors.
 use a dynamically reallocating hashmap @ https://github.com/robertkety/dataStructures/blob/master/hashMap.c
 
 ```
