@@ -546,13 +546,7 @@ As mentioned above, to prevent file system functions from being called concurren
 
 ## Rationale 
 	
-HashMap vs list
-
-Each thread has its own hashmap versus a global hashmap. 
-
-easy to close all the files when exiting a process or terminating a thread, you just need to iterate through the hashmap. 
-
-Time complexity-> constant time since accessing the hashmaps takes constant time. 
+We included a hashmap of the file descriptors with respect to their file pointers is because we wanted to use the Pintos file.h functions. They require file pointers instead of file descriptors which is why we need to track the file pointers. The reason why we used Hashmaps instead of a List is because we want to have a faster accessing time. Hashmaps have constant accessing complexity as well as insertion. We compartmentalize the file descriptors in their local threads because it allows easier abstraction as well as a cleaner data structure compared to a global file descriptor hashmap. With a global hashmap, we would need to also keep track of which thread the file descriptor is being accessed in, creating unnecessary complexity. In addition, we are able to easily close files when exiting the thread by iterating over the Hashmap. Overall, our functions are linear in complexity with respect to the length of the buffer size as accessing the Hashmap is constant.
 	
 # Additional Questions
  
