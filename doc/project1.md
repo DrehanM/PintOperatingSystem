@@ -444,27 +444,43 @@ Finally, time/space complexity for each syscall are as follows:
  ## Data Structures and Functions
  
  ```
- This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler.
+ This function synchronizes all the file_operations. It receives which file_operation it needs to perform from syscall_handler and calls the respective function. This function consists of a switch statement where each case corresponds to one of the file_operations. 
  static void file_operation_handler(__LIB_SYSCALL_NR_H file_operation) {}
  ```
- Below we describe how the file_operation_handler will perform each of the following file operations:
+ Below we describe the implementation of each of the file operations:
  ### Create
+ 	Function:
+	bool create(const char *file, unsiged initial_size){}
+	
+ 	This function calls the filesys_create(const char *name, off_t initial_size) function in filesys.c. The parameters for filesys_create consist of the file name (*file) and file size (initial_size) provided by the user. create will return the 
  
  ### Remove
+ 	Function:
+	bool remove(const char *file) {}
+	
+	This function calls the filesys_o
+ 
  
  ### Open
  
+ 
  ### Filesize
+ 
  
  ### Read
  
+ 
  ### Write
+ 
  
  ### Seek
  
+ 
  ### Tell
  
+ 
  ### Close
+ 
  
  ## Algorithms
  
