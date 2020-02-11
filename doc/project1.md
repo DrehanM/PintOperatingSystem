@@ -539,8 +539,7 @@ void close (int fd) {}
 Calls `get_file_from_fd(fd)` to get the `*file`. This function calls file_close (struct file * file) in file.c, and removes fd from the threads hashmap.
 
 ## Algorithms
-All of the file operation functions will check that fd is greater than or equal to two. The only exceptions to this are read and write. 
-
+As described above, all file operation syscalls are handled by syscall_handler in syscall.c. Once syscall_handler identifies that the user made a file operation system call, it will call `file_operation_handler` with the respective file_operation. `file_operation_handler` will first attempt to acquire the global_lock (initialized in syscall.c); if succesfull, it will call the corresponding file operation and then release the lock. Otherwise, it will wait until the lock is released by the holder to acquire it, execute the file operation, and then release it. The logic and functionality of each of the file operations are described in the section above. Nevertheless, it is important to note that for our file system to work we had to modify the thread struct by adding a hashmap as one of its fields. This hashmaps contains all the file descriptors of the thread that contains it; it maps each file descriptor to a file pointer, which is used to call PINTOS file operations in file.c and filesys.c.   
 
 ## Synchronization
 As mentioned above, to prevent file system functions from being called concurrently we will use a global lock. The function `file_operation_handler` will be responsible for acquiring and releasing the lock before and after a file operation is executed. Before a file operation is called, we will attempt to acquire the lock and when the operation terminates we will release the lock. This will prevent concurrent calls to the file system. No resources are shared between the thread since each has a different hashmap. 
@@ -550,6 +549,8 @@ As mentioned above, to prevent file system functions from being called concurren
 HashMap vs list
 
 Each thread has its own hashmap versus a global hashmap. 
+
+easy to close all the files when exiting a process or terminating a thread, you just need to iterate through the hashmap. 
 
 Time complexity-> constant time since accessing the hashmaps takes constant time. 
 	
