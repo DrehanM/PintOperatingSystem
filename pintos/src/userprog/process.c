@@ -19,6 +19,8 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+#include "lib/kernel/list.h"
+
 static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -30,15 +32,15 @@ typedef struct word {
 } word_t;
 
 // mutates word_lst and adds all of the words from file_name to it
-void get_word_list(char *file_name, list *word_lst) {
+void get_word_list(char *file_name, struct list *word_lst) {
   char* token;
   char* rest = file_name; 
   while ((token = strtok_r(rest, " ", &rest))) {
-    word_t *wc = (word_t*) malloc(size(word_t));
+    word_t *wc = (word_t*) malloc(sizeof(word_t));
     wc->word = strdup(token);
     wc->length_word = strlen(wc->word);
     struct list_elem *new_elem = &wc->elem;
-    list_push_front(word_lst, new_elem);
+    list_push_back(word_lst, new_elem);
   }  
 }
 
@@ -47,7 +49,20 @@ void get_word_list(char *file_name, list *word_lst) {
 	//word_lst: mutated from get_word_list
 	//argv: pointer to a list of length argc
 	//argv_lengths: empty list of length argc
-void get_argv_from_list(list *word_lst, char *argv[], int argv_lengths[]) {
+void get_argv_from_list(word_t *word_lst, char *argv[], int argv_lengths[]) {
+  int i = 0;
+  for (struct list_elem *e = list_begin(&word_lst->elem); e != list_end(&word_lst->elem); e = list_next(e)) {
+    word_t *next_word_struct = list_entry(e, word_t, elem);
+    char *curr_word = next_word_struct->word;
+    argv[i] = curr_word;
+    int letter_count = 0;
+    while (*curr_word) {
+      letter_count++;
+      curr_word++;
+    }
+    argv_lengths[i] = letter_count + 1; // add the null terminator byte
+    i++;
+  }
   return;
 }
 
@@ -62,18 +77,25 @@ process_execute (const char *file_name)
   char *fn_copy;
   tid_t tid;
 
-  struct list word_list;
-  list_init(&word_list);
-  char *file_name_copy = strdup(file_name);
-  get_word_list(file_name_copy, &word_list);
-  //get_argv_from_list(&word_list, )
-
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+
+  struct list word_list;
+  list_init(&word_list);
+  char *file_name_copy = strdup(file_name);
+
+  get_word_list(file_name_copy, &word_list);
+  int argc = list_size(&word_list);
+  int argv_lengths[argc];
+  char *argv[argc];
+  get_argv_from_list(&word_list, argv, argv_lengths);
+
+  
+
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
