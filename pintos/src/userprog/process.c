@@ -23,6 +23,35 @@ static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+typedef struct word {
+	char *word;
+	int length_word;
+	struct list_elem elem;
+} word_t;
+
+// mutates word_lst and adds all of the words from file_name to it
+void get_word_list(char *file_name, list *word_lst) {
+  char* token;
+  char* rest = file_name; 
+  while ((token = strtok_r(rest, " ", &rest))) {
+    word_t *wc = (word_t*) malloc(size(word_t));
+    wc->word = strdup(token);
+    wc->length_word = strlen(wc->word);
+    struct list_elem *new_elem = &wc->elem;
+    list_push_front(word_lst, new_elem);
+  }  
+}
+
+// converts word_lst to argv, populates lengths with the length of each argv's word
+// arguments: 
+	//word_lst: mutated from get_word_list
+	//argv: pointer to a list of length argc
+	//argv_lengths: empty list of length argc
+void get_argv_from_list(list *word_lst, char *argv[], int argv_lengths[]) {
+  return;
+}
+
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -32,6 +61,12 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
+
+  struct list word_list;
+  list_init(&word_list);
+  char *file_name_copy = strdup(file_name);
+  get_word_list(file_name_copy, &word_list);
+  //get_argv_from_list(&word_list, )
 
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
