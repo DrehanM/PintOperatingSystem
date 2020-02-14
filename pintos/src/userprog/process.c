@@ -3,8 +3,8 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <stdlib.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -15,6 +15,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -36,8 +37,10 @@ void get_word_list(char *file_name, struct list *word_lst) {
   char* token;
   char* rest = file_name; 
   while ((token = strtok_r(rest, " ", &rest))) {
-    word_t *wc = (word_t*) malloc(sizeof(word_t));
-    wc->word = strdup(token);
+    word_t *wc = malloc(sizeof(word_t));
+    wc->word = malloc(sizeof(token));
+    strlcpy(wc->word, token, sizeof(token));
+
     wc->length_word = strlen(wc->word);
     struct list_elem *new_elem = &wc->elem;
     list_push_back(word_lst, new_elem);
@@ -49,9 +52,9 @@ void get_word_list(char *file_name, struct list *word_lst) {
 	//word_lst: mutated from get_word_list
 	//argv: pointer to a list of length argc
 	//argv_lengths: empty list of length argc
-void get_argv_from_list(word_t *word_lst, char *argv[], int argv_lengths[]) {
+void get_argv_from_list(struct list *word_lst, char *argv[], int argv_lengths[]) {
   int i = 0;
-  for (struct list_elem *e = list_begin(&word_lst->elem); e != list_end(&word_lst->elem); e = list_next(e)) {
+  for (struct list_elem *e = list_begin(word_lst); e != list_end(word_lst); e = list_next(e)) {
     word_t *next_word_struct = list_entry(e, word_t, elem);
     char *curr_word = next_word_struct->word;
     argv[i] = curr_word;
@@ -63,6 +66,9 @@ void get_argv_from_list(word_t *word_lst, char *argv[], int argv_lengths[]) {
     argv_lengths[i] = letter_count + 1; // add the null terminator byte
     i++;
   }
+
+  // TODO: free word_lst, remember to free *word as well.
+
   return;
 }
 
@@ -86,9 +92,13 @@ process_execute (const char *file_name)
 
   struct list word_list;
   list_init(&word_list);
-  char *file_name_copy = strdup(file_name);
+
+  char *file_name_copy = malloc(sizeof(file_name));
+  strlcpy(file_name_copy, file_name, sizeof(file_name));
 
   get_word_list(file_name_copy, &word_list);
+  free(file_name_copy);
+
   int argc = list_size(&word_list);
   int argv_lengths[argc];
   char *argv[argc];
@@ -105,13 +115,31 @@ process_execute (const char *file_name)
   return tid;
 }
 
+uint32_t stack_alignment_calc(void* stack_pointer, int argc) {
+  // returns the number of bytes needed to align the stack pointer
+
+  // subtracting 16 because null argv, argv, argv, garbage return address
+  uint32_t end_stack_pointer = stack_pointer - 16 - (4*argc);
+  uint32_t stack_alignment = 0;
+  if (end_stack_pointer % 16 != 12) {
+    if (end_stack_pointer % 16 > 12) {
+      stack_alignment = end_stack_pointer % 16 - 12;
+    } else {
+      stack_alignment = end_stack_pointer % 16 + 4;
+    }
+  }
+
+  return stack_alignment;
+}
+
 int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
   // loads arguments onto the stack, mutates if_esp to be the new stack pointer
 
   uint32_t address_lst[argc];
-  uint32_t current_sp = *if_esp;
+  void *current_sp = *if_esp;
   for (int i=0; i < argc; i++) { // iterate through words
-    for (int j=argc-1; j >= 0; j--) { // iterate through chars backwards
+    int word_length = argv_lengths[i];
+    for (int j=word_length-1; j >= 0; j--) { // iterate through chars backwards
       char c = argv[i][j];
       current_sp--;
       memset(current_sp, c, 1);
@@ -146,23 +174,7 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
   memset(current_sp, 69, 4);
 
   *if_esp = current_sp;
-}
-
-uint32_t stack_alignment_calc(uint32_t stack_pointer, int argc) {
-  // returns the number of bytes needed to align the stack pointer
-
-  // subtracting 16 because null argv, argv, argv, garbage return address
-  uint32_t end_stack_pointer = stack_pointer - 16 - (4*argc);
-  uint32_t stack_alignment = 0;
-  if (end_stack_pointer % 16 != 12) {
-    if (end_stack_pointer % 16 > 12) {
-      stack_alignment = end_stack_pointer % 16 - 12;
-    } else {
-      stack_alignment = end_stack_pointer % 16 + 4;
-    }
-  }
-
-  return stack_alignment;
+  return 0;
 }
 
 
