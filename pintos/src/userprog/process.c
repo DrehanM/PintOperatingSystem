@@ -49,6 +49,8 @@ process_execute (const char *file_name)
 }
 
 int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
+  // loads arguments onto the stack, mutates if_esp to be the new stack pointer
+
   uint32_t address_lst[argc];
   uint32_t current_sp = *if_esp;
   for (int i=0; i < argc; i++) { // iterate through words
@@ -90,7 +92,9 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
 }
 
 uint32_t stack_alignment_calc(uint32_t stack_pointer, int argc) {
+  // returns the number of bytes needed to align the stack pointer
 
+  // subtracting 16 because null argv, argv, argv, garbage return address
   uint32_t end_stack_pointer = stack_pointer - 16 - (4*argc);
   uint32_t stack_alignment = 0;
   if (end_stack_pointer % 16 != 12) {
@@ -101,7 +105,7 @@ uint32_t stack_alignment_calc(uint32_t stack_pointer, int argc) {
     }
   }
 
-  return stack_alignment
+  return stack_alignment;
 }
 
 
