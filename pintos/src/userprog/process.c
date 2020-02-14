@@ -48,6 +48,63 @@ process_execute (const char *file_name)
   return tid;
 }
 
+int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
+  uint32_t address_lst[argc];
+  uint32_t current_sp = *if_esp;
+  for (int i=0; i < argc; i++) { // iterate through words
+    for (int j=argc-1; j >= 0; j--) { // iterate through chars backwards
+      char c = argv[i][j];
+      current_sp--;
+      memset(current_sp, c, 1);
+    }
+  }
+
+  // stack alignment
+  uint32_t stack_alignment = stack_alignment_calc(current_sp, argc);
+  current_sp -= stack_alignment;
+  memset(current_sp, 0, stack_alignment);
+  
+  // null argv address
+  current_sp -= 4;
+  memset(current_sp, 0, 4);
+
+  // argv addresses
+  for (int i = argc-1; i >=0; i--) {
+    current_sp -= 4;
+    memset(current_sp, address_lst[i], 4);
+  }
+  
+  // argv
+  current_sp -= 4;
+  memset(current_sp, argv, 4);
+
+  // argc
+  current_sp -= 4; 
+  memset(current_sp, argc, 4);
+
+  // garbage return 
+  current_sp -= 4;
+  memset(current_sp, 69, 4);
+
+  *if_esp = current_sp;
+}
+
+uint32_t stack_alignment_calc(uint32_t stack_pointer, int argc) {
+
+  uint32_t end_stack_pointer = stack_pointer - 16 - (4*argc);
+  uint32_t stack_alignment = 0;
+  if (end_stack_pointer % 16 != 12) {
+    if (end_stack_pointer % 16 > 12) {
+      stack_alignment = end_stack_pointer % 16 - 12;
+    } else {
+      stack_alignment = end_stack_pointer % 16 + 4;
+    }
+  }
+
+  return stack_alignment
+}
+
+
 /* A thread function that loads a user process and starts it
    running. */
 static void
