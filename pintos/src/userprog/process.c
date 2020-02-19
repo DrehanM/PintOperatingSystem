@@ -85,24 +85,7 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
 
-  struct list word_list;
-  list_init(&word_list);
 
-  char *file_name_copy = malloc(sizeof(file_name));
-  strlcpy(file_name_copy, file_name, sizeof(file_name));
-
-  get_word_list(file_name_copy, &word_list);
-  free(file_name_copy);
-
-  int argc = list_size(&word_list);
-  // int argv_lengths[argc];
-  // get_argv_from_list(&word_list, argv, argv_lengths);
-
-  strlcpy (fn_copy, file_name, PGSIZE);
-  char *argv[argc+1] = {"ls", "-ahl", NULL};
-  int argv_lengths[2] = {2,4};
-  load_arguments_to_stack(3, argv, argv_lengths, );
-  ;
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -113,7 +96,7 @@ process_execute (const char *file_name)
 int stack_alignment_calc(void* stack_pointer, int argc) {
   // returns the number of bytes needed to align the stack pointer
 
-  // subtracting 16 because null argv, argv, argv, garbage return address
+  // subtracting 16 because null argv, argv, argc, garbage return address
   int end_stack_pointer = (int) stack_pointer - 16 - (4*argc);
   int stack_alignment = 0;
   if (end_stack_pointer % 16 != 12) {
@@ -139,6 +122,7 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
       current_sp--;
       memset(current_sp, c, 1);
     }
+    address_lst[i] = (uint32_t) current_sp;
   }
 
   // stack alignment
@@ -189,6 +173,25 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+
+
+  // char *file_name_copy = malloc(sizeof(file_name_));
+  // strlcpy(file_name_copy, file_name_, sizeof(file_name_));
+
+
+  // struct list word_list;
+  // list_init(&word_list);
+
+  // get_word_list(file_name_copy, &word_list);
+  // free(file_name_copy);
+
+  // int argc = list_size(&word_list);
+  // char *argv[argc+1];
+  // int argv_lengths[argc];
+  // get_argv_from_list(&word_list, argv, argv_lengths);
+
+  // load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
