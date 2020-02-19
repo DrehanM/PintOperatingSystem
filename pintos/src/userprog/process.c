@@ -58,12 +58,7 @@ void get_argv_from_list(struct list *word_lst, char *argv[], int argv_lengths[])
     word_t *next_word_struct = list_entry(e, word_t, elem);
     char *curr_word = next_word_struct->word;
     argv[i] = curr_word;
-    int letter_count = 0;
-    while (*curr_word) {
-      letter_count++;
-      curr_word++;
-    }
-    argv_lengths[i] = letter_count + 1; // add the null terminator byte
+    argv_lengths[i] = strlen(curr_word); // add the null terminator byte
     i++;
   }
 
@@ -100,14 +95,14 @@ process_execute (const char *file_name)
   free(file_name_copy);
 
   int argc = list_size(&word_list);
-  int argv_lengths[argc];
-  char *argv[argc];
-  get_argv_from_list(&word_list, argv, argv_lengths);
-
-
+  // int argv_lengths[argc];
+  // get_argv_from_list(&word_list, argv, argv_lengths);
 
   strlcpy (fn_copy, file_name, PGSIZE);
-
+  char *argv[argc+1] = {"ls", "-ahl", NULL};
+  int argv_lengths[2] = {2,4};
+  load_arguments_to_stack(3, argv, argv_lengths, );
+  ;
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -115,12 +110,12 @@ process_execute (const char *file_name)
   return tid;
 }
 
-uint32_t stack_alignment_calc(void* stack_pointer, int argc) {
+int stack_alignment_calc(void* stack_pointer, int argc) {
   // returns the number of bytes needed to align the stack pointer
 
   // subtracting 16 because null argv, argv, argv, garbage return address
-  uint32_t end_stack_pointer = stack_pointer - 16 - (4*argc);
-  uint32_t stack_alignment = 0;
+  int end_stack_pointer = (int) stack_pointer - 16 - (4*argc);
+  int stack_alignment = 0;
   if (end_stack_pointer % 16 != 12) {
     if (end_stack_pointer % 16 > 12) {
       stack_alignment = end_stack_pointer % 16 - 12;
@@ -134,7 +129,7 @@ uint32_t stack_alignment_calc(void* stack_pointer, int argc) {
 
 int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
   // loads arguments onto the stack, mutates if_esp to be the new stack pointer
-
+  // TODO: figure out the address casts to int
   uint32_t address_lst[argc];
   void *current_sp = *if_esp;
   for (int i=0; i < argc; i++) { // iterate through words
@@ -163,7 +158,7 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
   
   // argv
   current_sp -= 4;
-  memset(current_sp, argv, 4);
+  memset(current_sp, (int) argv, 4);
 
   // argc
   current_sp -= 4; 
@@ -176,6 +171,7 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
   *if_esp = current_sp;
   return 0;
 }
+
 
 
 /* A thread function that loads a user process and starts it

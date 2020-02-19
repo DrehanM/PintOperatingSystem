@@ -9,7 +9,7 @@ int process_wait (tid_t);
 void get_word_list(char *file_name, struct list *word_lst);
 void get_argv_from_list(struct list *word_lst, char *argv[], int argv_lengths[]);
 
-uint32_t stack_alignment_calc(void* stack_pointer, int argc);
+int stack_alignment_calc(void* stack_pointer, int argc);
 int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp);
 
 void process_exit (void);
