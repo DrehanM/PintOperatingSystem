@@ -26,6 +26,31 @@ static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+/* Starts a new thread running a user program loaded from
+   FILENAME.  The new thread may be scheduled (and may even exit)
+   before process_execute() returns.  Returns the new process's
+   thread id, or TID_ERROR if the thread cannot be created. */
+tid_t
+process_execute (const char *command)
+{
+  char *command_copy;
+  tid_t tid;
+
+  sema_init (&temporary, 0);
+  /* Make a copy of command.
+     Otherwise there's a race between the caller and load(). */
+  command_copy = palloc_get_page (0);
+  if (command_copy == NULL)
+    return TID_ERROR;
+  strlcpy (command_copy, command, PGSIZE);
+
+  /* Create a new thread to execute FILE_NAME. */
+  tid = thread_create (command, PRI_DEFAULT, start_process, command_copy);
+  if (tid == TID_ERROR)
+    palloc_free_page (command_copy);
+  return tid;
+}
+
 typedef struct word {
 	char *word;
 	int length_word;
@@ -37,11 +62,9 @@ void get_word_list(char *file_name, struct list *word_lst) {
   char* token;
   char* rest = file_name; 
   while ((token = strtok_r(rest, " ", &rest))) {
-    word_t *wc = malloc(sizeof(word_t));
-    wc->word = malloc(sizeof(token));
-    strlcpy(wc->word, token, sizeof(token));
-
-    wc->length_word = strlen(wc->word);
+    word_t *wc = (word_t*) malloc(sizeof(word_t));
+    wc->word = token;
+    wc->length_word = strlen(wc->word)+1; // + 1 for the null terminator
     struct list_elem *new_elem = &wc->elem;
     list_push_back(word_lst, new_elem);
   }  
@@ -52,52 +75,24 @@ void get_word_list(char *file_name, struct list *word_lst) {
 	//word_lst: mutated from get_word_list
 	//argv: pointer to a list of length argc
 	//argv_lengths: empty list of length argc
-void get_argv_from_list(struct list *word_lst, char *argv[], int argv_lengths[]) {
+/* Requires: word_lst != NULL && list_size(word_lst) == sizeof(argv_length)/sizeof(argv_lengths[0]) */
+void get_argv_from_list(struct list *word_lst, char *argv[], size_t *argv_lengths) {
+  word_t *w;
+  struct list_elem *e;
   int i = 0;
-  for (struct list_elem *e = list_begin(word_lst); e != list_end(word_lst); e = list_next(e)) {
-    word_t *next_word_struct = list_entry(e, word_t, elem);
-    char *curr_word = next_word_struct->word;
-    argv[i] = curr_word;
-    argv_lengths[i] = strlen(curr_word); // add the null terminator byte
+  for (e = list_begin(word_lst); e->next != NULL; e = e->next) {
+    w = list_entry(e, word_t, elem);
+    argv[i] = w->word;
+    argv_lengths[i] = w->length_word;
     i++;
   }
-
-  // TODO: free word_lst, remember to free *word as well.
-
-  return;
-}
-
-
-/* Starts a new thread running a user program loaded from
-   FILENAME.  The new thread may be scheduled (and may even exit)
-   before process_execute() returns.  Returns the new process's
-   thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name)
-{
-  char *fn_copy;
-  tid_t tid;
-
-  sema_init (&temporary, 0);
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-
-
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
-  return tid;
+  argv[i] = NULL;
 }
 
 int stack_alignment_calc(void* stack_pointer, int argc) {
   // returns the number of bytes needed to align the stack pointer
-
   // subtracting 16 because null argv, argv, argc, garbage return address
-  int end_stack_pointer = (int) stack_pointer - 16 - (4*argc);
+  uint32_t end_stack_pointer = (uint32_t) stack_pointer - 16 - (4*argc);
   int stack_alignment = 0;
   if (end_stack_pointer % 16 != 12) {
     if (end_stack_pointer % 16 > 12) {
@@ -106,13 +101,19 @@ int stack_alignment_calc(void* stack_pointer, int argc) {
       stack_alignment = end_stack_pointer % 16 + 4;
     }
   }
-
   return stack_alignment;
 }
 
-int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
+void memset_word(void *current_sp, int load) {
+  for (int i = 0; i < 4; i++) {
+    int shifted = (load >> (8*i)) & 0xff;
+    memset(current_sp+i, shifted, 1);
+  }
+}
+
+bool load_arguments_to_stack(int argc, char *argv[], size_t argv_lengths[], void **if_esp) {
   // loads arguments onto the stack, mutates if_esp to be the new stack pointer
-  // TODO: figure out the address casts to int
+
   uint32_t address_lst[argc];
   void *current_sp = *if_esp;
   for (int i=0; i < argc; i++) { // iterate through words
@@ -132,71 +133,81 @@ int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **i
   
   // null argv address
   current_sp -= 4;
-  memset(current_sp, 0, 4);
+  memset_word(current_sp, 0);
 
   // argv addresses
   for (int i = argc-1; i >=0; i--) {
     current_sp -= 4;
-    memset(current_sp, address_lst[i], 4);
+    memset_word(current_sp, address_lst[i]);
   }
   
   // argv
   current_sp -= 4;
-  memset(current_sp, (int) argv, 4);
+  memset_word(current_sp, (int) current_sp + 4);
 
   // argc
   current_sp -= 4; 
-  memset(current_sp, argc, 4);
+  memset_word(current_sp, argc);
 
   // garbage return 
   current_sp -= 4;
-  memset(current_sp, 69, 4);
+  memset_word(current_sp, 69);
 
+  // wrapped around to kernel mem
+  if ((uint32_t) current_sp > (uint32_t) if_esp) {
+    return false;
+  }
   *if_esp = current_sp;
-  return 0;
+  return true;
 }
-
-
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *command_)
 {
-  char *file_name = file_name_;
+  char *command = command_;
   struct intr_frame if_;
-  bool success;
-
+  bool load_success;
+  bool arg_success;
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
 
 
+  // make a copy of the command, because get_word_list is destructive
+  char *command_copy = malloc(strlen(command) + 1);
+  strlcpy(command_copy, command, strlen(command) + 1);
 
-  // char *file_name_copy = malloc(sizeof(file_name_));
-  // strlcpy(file_name_copy, file_name_, sizeof(file_name_));
+  struct list word_list;
+  list_init(&word_list);
 
+  get_word_list(command_copy, &word_list);
+  // free(command);
 
-  // struct list word_list;
-  // list_init(&word_list);
+  int argc = list_size(&word_list);
+  char *argv[argc+1];
+  size_t argv_lengths[argc];
+  get_argv_from_list(&word_list, argv, argv_lengths);
 
-  // get_word_list(file_name_copy, &word_list);
-  // free(file_name_copy);
+  char *filename = argv[0];
 
-  // int argc = list_size(&word_list);
-  // char *argv[argc+1];
-  // int argv_lengths[argc];
-  // get_argv_from_list(&word_list, argv, argv_lengths);
+  load_success = load (filename, &if_.eip, &if_.esp);
 
-  // load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
+  arg_success = load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success)
+  palloc_free_page (command);
+  if (!load_success) {
+    printf("loading failed\n");
     thread_exit ();
+  }
+  if (!arg_success) {
+    printf("stack pointer wrapped into kernel mem!\n");
+    thread_exit ();
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
