@@ -52,17 +52,24 @@ void file_operation_handler(struct intr_frame *f) {
       break;               /* Obtain a file's size. */
 
     // BEN AND DIEGO
-    case SYS_READ:
-      break;                   /* Read from a file. */
-    case SYS_WRITE: {
-        int size = args[1];
-        void *buffer = (void *)args[2];
-        int fd = args[3];
-        struct file *file_ = get_file_from_fd(fd);
-        int written_bytes = file_write(file_, buffer, size);
-        f->eax = written_bytes;
-        break;
-      }                  /* Write to a file. */
+    case SYS_READ: { /* Read from a file. */
+
+      break;
+    }
+                         
+    case SYS_WRITE: { /* Write to a file. */
+      int fd = args[1];
+      void *buffer = (void *)args[2];
+      int size = args[3];
+
+      struct file *file_ = get_file_from_fd(fd);
+      if (file_ == NULL) {
+        return;
+      }
+      int written_bytes = file_write(file_, buffer, size);
+      f->eax = written_bytes;
+      break;
+    }                  
     case SYS_SEEK:
       break;                   /* Change position in a file. */
     case SYS_TELL:
@@ -72,7 +79,6 @@ void file_operation_handler(struct intr_frame *f) {
  
   }
   lock_release(&global_file_lock);
-  thread_exit ();
 }
 
 static void
@@ -91,7 +97,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
-    // printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
+    printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
     thread_exit ();
   } else if (args[0] == SYS_HALT) {
     return;
