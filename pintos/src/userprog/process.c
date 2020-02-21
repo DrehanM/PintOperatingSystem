@@ -191,6 +191,7 @@ start_process (void *command_)
   size_t argv_lengths[argc];
   get_argv_from_list(&word_list, argv, argv_lengths);
 
+  // Set name of the thread to be the filename.
   char *filename = argv[0];
   struct thread *t = thread_current();
   strlcpy (t->name, filename, sizeof t->name); 
