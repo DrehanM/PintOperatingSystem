@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "../filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
 static struct lock global_file_lock;
@@ -10,19 +11,19 @@ static size_t fd_count = 2;
 
 typedef struct thread_fd {
   int fd;
-  FILE *file;
+  struct file *f;
   struct list_elem elem;
 } thread_fd_t;
 
 
-FILE *
+static struct file *
 get_file_from_fd(int fd) {
   struct list l = thread_current()->fd_map;
   thread_fd_t *w;
   for (struct list_elem *e = list_begin(&l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
     if (w->fd == fd) {
-      return w->file;
+      return w->f;
     }
   }
   return NULL;
@@ -35,8 +36,7 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-static void
-file_operation_handler(struct intr_frame *f) {
+void file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
   lock_acquire(&global_file_lock);
   switch (args[0]) {
@@ -54,8 +54,15 @@ file_operation_handler(struct intr_frame *f) {
     // BEN AND DIEGO
     case SYS_READ:
       break;                   /* Read from a file. */
-    case SYS_WRITE:
-      break;                  /* Write to a file. */
+    case SYS_WRITE: {
+        int size = args[1];
+        void *buffer = (void *)args[2];
+        int fd = args[3];
+        struct file *file_ = get_file_from_fd(fd);
+        int written_bytes = file_write(file_, buffer, size);
+        f->eax = written_bytes;
+        break;
+      }                  /* Write to a file. */
     case SYS_SEEK:
       break;                   /* Change position in a file. */
     case SYS_TELL:
@@ -64,8 +71,8 @@ file_operation_handler(struct intr_frame *f) {
       break;
  
   }
-
   lock_release(&global_file_lock);
+  thread_exit ();
 }
 
 static void
@@ -84,7 +91,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
-    printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
+    // printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
     thread_exit ();
   } else if (args[0] == SYS_HALT) {
     return;
