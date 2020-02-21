@@ -10,12 +10,12 @@ static size_t fd_count = 2;
 
 typedef struct thread_fd {
   int fd;
-  FILE *file;
+  file *file;
   struct list_elem elem;
 } thread_fd_t;
 
 
-FILE *
+file *
 get_file_from_fd(int fd) {
   struct list l = thread_current()->fd_map;
   thread_fd_t *w;
@@ -35,20 +35,54 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+bool create(const char * file, unsigned initial_size){
+  return filesys_create(file, initial_size);
+}
+
+bool remove(const char * file) {
+  return filesys_remove(file);
+}
+
+int open(const char * file) {
+  file *f = filesys_open(file);
+  if (f == NULL) {
+    return -1;
+  }
+  if ( (thread_fd_t *fd = malloc(sizeof(thread_fd_t)) ) == NULL) {
+    file_close(f);
+    return -1;
+  }
+  fd->fd = fd_count;
+  fd->file = f;
+  struct list l = thread_current()->fd_map;
+  list_push_back(l, fd->elem);
+  fd_count++;
+  return fd_count-1;
+}
+
+int filesize(int fd) {
+  file *f = get_file_from_fd(fd);
+  return file_length(f);
+}
+
 static void
 file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
   lock_acquire(&global_file_lock);
   switch (args[0]) {
     // LUKE AND CHRIS
-    
+
     case SYS_CREATE:
+      f->eax = create(args[1], args[2]);
       break;                /* Create a file. */
     case SYS_REMOVE:
+      f->eax = remove(args[1]);
       break;                 /* Delete a file. */
     case SYS_OPEN:
+      f->eax = open(args[1]);
       break;                   /* Open a file. */
     case SYS_FILESIZE:
+      f->eax = filesize(args[1]);
       break;               /* Obtain a file's size. */
 
     // BEN AND DIEGO
@@ -62,7 +96,7 @@ file_operation_handler(struct intr_frame *f) {
       break;                   /* Report current position in a file. */
     case SYS_CLOSE:
       break;
- 
+
   }
 
   lock_release(&global_file_lock);
