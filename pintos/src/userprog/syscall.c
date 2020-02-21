@@ -50,15 +50,18 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-bool create(const char * file, unsigned initial_size){
+static bool
+create(const char * file, unsigned initial_size){
   return filesys_create(file, initial_size);
 }
 
-bool remove(const char * file) {
+static bool
+remove(const char * file) {
   return filesys_remove(file);
 }
 
-int open(const char * file) {
+static int
+open(const char * file) {
   struct file *f = filesys_open(file);
   if (f == NULL) {
     return -1;
@@ -75,7 +78,8 @@ int open(const char * file) {
   return fd_count-1;
 }
 
-int filesize(int fd) {
+static int
+filesize(int fd) {
   file *f = get_file_from_fd(fd);
   return file_length(f);
 }
@@ -103,43 +107,43 @@ file_operation_handler(struct intr_frame *f) {
     // BEN AND DIEGO
 
     case SYS_READ: {
-        int size = args[3];
-        void *buffer = (void *)args[2];
-        int fd = args[1];
-        struct file *file_ = get_file_from_fd(fd);
-        int read_bytes = file_read(file_, buffer, size);
-        f->eax = read_bytes;
-        break;
+      int size = args[3];
+      void *buffer = (void *)args[2];
+      int fd = args[1];
+      struct file *file_ = get_file_from_fd(fd);
+      int read_bytes = file_read(file_, buffer, size);
+      f->eax = read_bytes;
+      break;
     }                  /* Read from a file. */
     case SYS_WRITE: {
-        int size = args[3];
-        void *buffer = (void *)args[2];
-        int fd = args[1];
-        struct file *file_ = get_file_from_fd(fd);
-        int written_bytes = file_write(file_, buffer, size);
-        f->eax = written_bytes;
-        break;
-      }                  /* Write to a file. */
+      int size = args[3];
+      void *buffer = (void *)args[2];
+      int fd = args[1];
+      struct file *file_ = get_file_from_fd(fd);
+      int written_bytes = file_write(file_, buffer, size);
+      f->eax = written_bytes;
+      break;
+    }                  /* Write to a file. */
     case SYS_SEEK: {
-        int new_pos = args[2];
-        int fd = args[1];
-        struct file *file_ = get_file_from_fd(fd);
-        file_seek(file_, new_pos);
-        break;            /* Change position in a file. */
-    }                 
+      int new_pos = args[2];
+      int fd = args[1];
+      struct file *file_ = get_file_from_fd(fd);
+      file_seek(file_, new_pos);
+      break;            /* Change position in a file. */
+    }
     case SYS_TELL: {
-          int fd = args[1];
-          int pos = file_tell(fd);
-          f->eax = pos;
-          break;   
+      int fd = args[1];
+      int pos = file_tell(fd);
+      f->eax = pos;
+      break;
     }                /* Report current position in a file. */
     case SYS_CLOSE: {
-          int fd = args[1];
-          struct file *file_ = get_file_from_fd(fd);
-          file_close(file_);
-          remove_file(fd);
-          break;
-    } 
+      int fd = args[1];
+      struct file *file_ = get_file_from_fd(fd);
+      file_close(file_);
+      remove_file(fd);
+      break;
+    }
   }
   lock_release(&global_file_lock);
 }
