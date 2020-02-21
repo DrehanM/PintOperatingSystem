@@ -13,6 +13,18 @@ syscall_init (void)
 }
 
 static void
+file_operation_handler(struct intr_frame *f) {
+  uint32_t* args = ((uint32_t*) f->esp);
+  switch (args[0]) {
+    case SYS_WRITE:
+      break  
+    case
+  
+    
+  }
+}
+
+static void
 syscall_handler (struct intr_frame *f UNUSED)
 {
   uint32_t* args = ((uint32_t*) f->esp);
@@ -32,4 +44,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       printf ("%s: exit(%d)\n", &thread_current ()->name, args[1]);
       thread_exit ();
     }
+  if (args[0] == SYS_WRITE) { // IF ANYTHING TO DO WITH FILESYSTEM
+
+
+
+  }
 }
