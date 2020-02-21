@@ -94,6 +94,8 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    
+    struct list fd_map;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
