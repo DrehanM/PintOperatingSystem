@@ -192,6 +192,8 @@ start_process (void *command_)
   get_argv_from_list(&word_list, argv, argv_lengths);
 
   char *filename = argv[0];
+  struct thread *t = thread_current();
+  strlcpy (t->name, filename, sizeof t->name); 
 
   load_success = load (filename, &if_.eip, &if_.esp);
 

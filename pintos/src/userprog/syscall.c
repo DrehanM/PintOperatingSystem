@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
 #include "../filesys/file.h"
 #include "../filesys/filesys.h"
 
@@ -30,7 +31,7 @@ get_file_from_fd(int fd) {
   return NULL;
 }
 
-void
+static void
 remove_file(int fd) {
   struct list l = thread_current()->fd_map;
   thread_fd_t *w;
@@ -41,7 +42,7 @@ remove_file(int fd) {
       return;
     }
   }
-  return NULL;
+  return;
 }
 
 void
@@ -67,21 +68,22 @@ open(const char * file) {
   if (f == NULL) {
     return -1;
   }
-  if ( (thread_fd_t *fd = malloc(sizeof(thread_fd_t)) ) == NULL) {
+  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
+  if (fd == NULL) {
     file_close(f);
     return -1;
   }
   fd->fd = fd_count;
-  fd->file = f;
+  fd->f = f;
   struct list l = thread_current()->fd_map;
-  list_push_back(&l, fd->elem);
+  list_push_back(&l, &fd->elem);
   fd_count++;
   return fd_count-1;
 }
 
 static int
 filesize(int fd) {
-  file *f = get_file_from_fd(fd);
+  struct file *f = get_file_from_fd(fd);
   return file_length(f);
 }
 
@@ -93,16 +95,16 @@ file_operation_handler(struct intr_frame *f) {
     // LUKE AND CHRIS
 
     case SYS_CREATE:
-      f->eax = create(args[1], args[2]);
+      f->eax = create((char *) args[1], (unsigned int) args[2]);
       break;                /* Create a file. */
     case SYS_REMOVE:
-      f->eax = remove(args[1]);
+      f->eax = remove((char *) args[1]);
       break;                 /* Delete a file. */
     case SYS_OPEN:
-      f->eax = open(args[1]);
+      f->eax = open((char *) args[1]);
       break;                   /* Open a file. */
     case SYS_FILESIZE:
-      f->eax = filesize(args[1]);
+      f->eax = filesize((int) args[1]);
       break;               /* Obtain a file's size. */
 
     // BEN AND DIEGO
@@ -121,8 +123,12 @@ file_operation_handler(struct intr_frame *f) {
       void *buffer = (void *)args[2];
       int fd = args[1];
       struct file *file_ = get_file_from_fd(fd);
-      int written_bytes = file_write(file_, buffer, size);
-      f->eax = written_bytes;
+      if (file_ != NULL) {
+        int written_bytes = file_write(file_, buffer, size);
+        f->eax = written_bytes;
+      } else if (fd == 1) {
+        printf((char *)buffer);
+      }
       break;
     }                  /* Write to a file. */
     case SYS_SEEK: {
@@ -134,7 +140,8 @@ file_operation_handler(struct intr_frame *f) {
     }
     case SYS_TELL: {
       int fd = args[1];
-      int pos = file_tell(fd);
+      struct file *file_ = get_file_from_fd(fd);
+      int pos = file_tell(file_);
       f->eax = pos;
       break;
     }                /* Report current position in a file. */

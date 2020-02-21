@@ -3,6 +3,6 @@
 #include "threads/interrupt.h"
 
 void syscall_init (void);
-void file_operation_handler(struct intr_frame *f);
+// void file_operation_handler(struct intr_frame *f);
 
 #endif /* userprog/syscall.h */
