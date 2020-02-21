@@ -5,23 +5,48 @@
 #include "threads/thread.h"
 
 static void syscall_handler (struct intr_frame *);
+static struct lock global_file_lock;
+static struct fd_count = 2;
+
 
 void
 syscall_init (void)
 {
+  lock_init(&global_file_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static void
 file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
+  lock_acquire(&global_file_lock);
   switch (args[0]) {
-    case SYS_WRITE:
-      break  
-    case
-  
+    // LUKE AND CHRIS
     
+    case SYS_CREATE:
+      break;                /* Create a file. */
+    case SYS_REMOVE:
+      break;                 /* Delete a file. */
+    case SYS_OPEN:
+      break;                   /* Open a file. */
+    case SYS_FILESIZE:
+      break;               /* Obtain a file's size. */
+
+    // BEN AND DIEGO
+    case SYS_READ:
+      break;                   /* Read from a file. */
+    case SYS_WRITE:
+      break;                  /* Write to a file. */
+    case SYS_SEEK:
+      break;                   /* Change position in a file. */
+    case SYS_TELL:
+      break;                   /* Report current position in a file. */
+    case SYS_CLOSE:
+      break;
+ 
   }
+
+  lock_release(&global_file_lock);
 }
 
 static void
