@@ -176,7 +176,6 @@ start_process (void *command_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-
   // make a copy of the command, because get_word_list is destructive
   char *command_copy = malloc(strlen(command) + 1);
   strlcpy(command_copy, command, strlen(command) + 1);
