@@ -44,7 +44,7 @@ bool remove(const char * file) {
 }
 
 int open(const char * file) {
-  file *f = filesys_open(file);
+  struct file *f = filesys_open(file);
   if (f == NULL) {
     return -1;
   }
