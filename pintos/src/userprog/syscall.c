@@ -106,7 +106,6 @@ void file_operation_handler(struct intr_frame *f) {
     } 
   }
   lock_release(&global_file_lock);
-  thread_exit ();
 }
 
 static void
