@@ -55,7 +55,7 @@ int open(const char * file) {
   fd->fd = fd_count;
   fd->file = f;
   struct list l = thread_current()->fd_map;
-  list_push_back(l, fd->elem);
+  list_push_back(&l, fd->elem);
   fd_count++;
   return fd_count-1;
 }
