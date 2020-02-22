@@ -1,4 +1,6 @@
 #include "userprog/syscall.h"
+#include "userprog/pagedir.h"
+#include "devices/shutdown.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -6,17 +8,144 @@
 #include "threads/malloc.h"
 #include "../filesys/file.h"
 #include "../filesys/filesys.h"
+#include "threads/vaddr.h"
 
 static void syscall_handler (struct intr_frame *);
 static struct lock global_file_lock;
 static size_t fd_count = 2;
+
+// Returns 0 if all necessary arguments of the syscall are in valid userspace memory, are mapped in memory, and are not null pointers.
+// Returns 1 if any required argument for the syscall is null.
+// Returns 2 if any of the arguments are fully or partially in unmapped memory.
+// Returns 3 if any arguments are fully or partially outside of user virtual address space.
+static int in_userspace_and_notnull(uint32_t *args) {
+  // uint32_t *pd = thread_current()->pagedir;
+
+  // if (!is_user_vaddr(&args[0]) || !is_user_vaddr(&args[0] + 3)) {
+  //   return 3;
+  // }
+
+  // if (pagedir_get_page(pd, &args[0]) == NULL 
+  // || pagedir_get_page(pd, &args[0] + 3) == NULL) {
+  //   return 2;
+  // }
+
+  // if (args[0] == NULL) {
+  //   return 1;
+  // }
+
+  // switch(args[0]) {
+  //   case SYS_HALT:
+  //     break;
+  //   case SYS_PRACTICE:
+  //   case SYS_EXIT:
+  //   case SYS_EXEC:
+  //   case SYS_WAIT:
+  //   case SYS_REMOVE:
+  //   case SYS_OPEN:
+  //   case SYS_FILESIZE:
+  //   case SYS_TELL:
+  //   case SYS_CLOSE:
+  //   case SYS_MUNMAP:
+  //   case SYS_CHDIR:
+  //   case SYS_MKDIR:
+  //   case SYS_ISDIR:
+  //   case SYS_INUMBER:
+  //     if (args[1] == NULL) {
+  //       return 1;
+  //     } else if (!is_user_vaddr(&args[1]) || !is_user_vaddr(&args[1] + 3)) {
+  //       return 3;
+  //     } else if (pagedir_get_page(pd, &args[1]) == NULL 
+  //         || pagedir_get_page(pd, &args[1] + 3) == NULL) {
+  //       return 2;
+  //     } else {
+  //       break;
+  //     }
+  //   case SYS_CREATE:
+  //   case SYS_SEEK:
+  //   case SYS_MMAP:
+  //   case SYS_READDIR:
+  //     if (args[1] == NULL || args[2] == NULL) {
+  //       return 1;
+  //     } else if (!is_user_vaddr(&args[2]) || !is_user_vaddr(&args[2] + 3)) {
+  //       return 3;
+  //     } else if (pagedir_get_page(pd, &args[2]) == NULL 
+  //         || pagedir_get_page(pd, &args[2] + 3) == NULL) {
+  //       return 2;
+  //     } else {
+  //       break;
+  //     }
+  //   case SYS_WRITE:
+  //   case SYS_READ:
+  //     if (args[1] == NULL || args[2] == NULL || args[3] == NULL) {
+  //       return 1;
+  //     } else if (!is_user_vaddr(&args[3]) || !is_user_vaddr(&args[3] + 3)) {
+  //       return 3;
+  //     } else if (pagedir_get_page(pd, &args[3]) == NULL 
+  //         || pagedir_get_page(pd, &args[3] + 3) == NULL) {
+  //       return 2;
+  //     } else {
+  //       break;
+  //     }
+  //   default:
+  //       break;
+  // }
+  return 0;
+}
+
+// Returns 0 if syscall is not handling a file or buffer OR if the parameter files/buffers are in valid user space, mapped correctly, and not null
+// Returns 1 if the file or buffer is a null pointer.
+// Returns 2 if the file or buffer points to unmapped memory.
+// Returns 3 if the file or buffer points to memory outside of user virtual address space.
+static int is_valid_file_or_buffer(uint32_t *args) {
+  // uint32_t *pd = thread_current()->pagedir;
+
+  // //precondition: args and args addresses have been verified
+  // switch (args[0]) {
+  //   case SYS_EXEC:
+  //   case SYS_CREATE:
+  //   case SYS_REMOVE:
+  //   case SYS_OPEN:
+  //     if (!is_user_vaddr(args[1])) {
+  //       return 3;
+  //     } else if (pagedir_get_page(pd, args[1]) == NULL) {
+  //       return 2;
+  //     } else if (*(args[1]) == NULL) {
+  //       return 1;
+  //     } else {
+  //       break;
+  //     }
+  //   case SYS_READ:
+  //   case SYS_WRITE:
+  //     if (!is_user_vaddr(args[2])) {
+  //       return 3;
+  //     } else if (pagedir_get_page(pd, args[2]) == NULL) {
+  //       return 2;
+  //     } else if (*(args[2]) == NULL) {
+  //       return 1;
+  //     } else {
+  //       break;
+  //     }
+  //   default:
+  //     break;
+  //   }
+  return 0;
+}
+
+static int validate_syscall_args(uint32_t* args) {
+	uint32_t error_code;
+	error_code = in_userspace_and_notnull(args);
+	if (error_code > 0) {return error_code;}
+	error_code = is_valid_file_or_buffer(args);
+	if (error_code > 0) {return error_code;}
+	return 0;
+}
 
 typedef struct thread_fd {
   int fd;
   struct file *f;
   struct list_elem elem;
 } thread_fd_t;
-
 
 static struct file *
 get_file_from_fd(int fd) {
@@ -200,6 +329,11 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   /* printf("System call number: %d\n", args[0]); */
 
+  if (validate_syscall_args(args) > 0) {
+    f->eax = -1;
+    return;
+  }
+
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
     printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, args[1]);
@@ -208,6 +342,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = args[1] + 1;
     return;
   } else if (args[0] == SYS_HALT) {
+    shutdown_power_off();
     return;
   } else if (args[0] == SYS_EXEC) {
     return;
@@ -217,3 +352,4 @@ syscall_handler (struct intr_frame *f UNUSED)
     file_operation_handler(f);
   }
 }
+
