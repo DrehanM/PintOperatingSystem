@@ -87,6 +87,45 @@ filesize(int fd) {
   return file_length(f);
 }
 
+static int 
+read(int fd, void *buffer, int size) {
+  struct file *file_ = get_file_from_fd(fd);
+  if (file_ != NULL) {
+    int read_bytes = file_read(file_, buffer, size);
+    return read_bytes;
+  }
+  return -1;
+}
+
+static int
+write(int fd, void *buffer, int size) {
+    struct file *file_ = get_file_from_fd(fd);
+    if (file_ != NULL) {
+      int written_bytes = file_write(file_, buffer, size);
+      return written_bytes;
+    }
+    return 0;
+}
+
+static void
+seek(int fd, int new_pos) {
+  struct file *file_ = get_file_from_fd(fd);
+  file_seek(file_, new_pos);
+}
+
+static int
+tell(int fd) {
+  struct file *file_ = get_file_from_fd(fd);
+  return file_tell(file_);
+}
+
+static void
+close(int fd) {
+  struct file *file_ = get_file_from_fd(fd);
+  file_close(file_);
+  remove_file(fd);
+}
+
 static void
 file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
@@ -113,43 +152,34 @@ file_operation_handler(struct intr_frame *f) {
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
-      struct file *file_ = get_file_from_fd(fd);
-      int read_bytes = file_read(file_, buffer, size);
-      f->eax = read_bytes;
+      f->eax = read(fd, buffer, size);
       break;
     }                  /* Read from a file. */
     case SYS_WRITE: {
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
-      struct file *file_ = get_file_from_fd(fd);
-      if (file_ != NULL) {
-        int written_bytes = file_write(file_, buffer, size);
-        f->eax = written_bytes;
-      } else if (fd == 1) {
+      if (fd == 1){
         printf("%s", (char *)buffer);
+      } else {
+        f->eax = write(fd, buffer, size);
       }
       break;
     }                  /* Write to a file. */
     case SYS_SEEK: {
       int new_pos = args[2];
       int fd = args[1];
-      struct file *file_ = get_file_from_fd(fd);
-      file_seek(file_, new_pos);
+      seek(fd, new_pos);
       break;            /* Change position in a file. */
     }
     case SYS_TELL: {
       int fd = args[1];
-      struct file *file_ = get_file_from_fd(fd);
-      int pos = file_tell(file_);
-      f->eax = pos;
+      f->eax = tell(fd);
       break;
     }                /* Report current position in a file. */
     case SYS_CLOSE: {
       int fd = args[1];
-      struct file *file_ = get_file_from_fd(fd);
-      file_close(file_);
-      remove_file(fd);
+      close(fd);
       break;
     }
   }
