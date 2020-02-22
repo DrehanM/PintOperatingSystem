@@ -289,7 +289,7 @@ file_operation_handler(struct intr_frame *f) {
       void *buffer = (void *)args[2];
       int fd = args[1];
       if (fd == 1){
-        printf("%s", (char *)buffer);
+        printf("%.*s", size, (char *) buffer);
       } else {
         f->eax = write(fd, buffer, size);
       }
