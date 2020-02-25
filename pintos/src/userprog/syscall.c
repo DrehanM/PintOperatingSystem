@@ -19,77 +19,77 @@ static size_t fd_count = 2;
 // Returns 2 if any of the arguments are fully or partially in unmapped memory.
 // Returns 3 if any arguments are fully or partially outside of user virtual address space.
 static int in_userspace_and_notnull(uint32_t *args) {
-  // uint32_t *pd = thread_current()->pagedir;
+  uint32_t *pd = thread_current()->pagedir;
 
-  // if (!is_user_vaddr(&args[0]) || !is_user_vaddr(&args[0] + 3)) {
-  //   return 3;
-  // }
+  if (!is_user_vaddr(&args[0]) || !is_user_vaddr(&args[0] + 3)) {
+    return 3;
+  }
 
-  // if (pagedir_get_page(pd, &args[0]) == NULL 
-  // || pagedir_get_page(pd, &args[0] + 3) == NULL) {
-  //   return 2;
-  // }
+  if (pagedir_get_page(pd, &args[0]) == NULL 
+  || pagedir_get_page(pd, &args[0] + 3) == NULL) {
+    return 2;
+  }
 
-  // if (args[0] == NULL) {
-  //   return 1;
-  // }
+  if (args[0] == NULL) {
+    return 1;
+  }
 
-  // switch(args[0]) {
-  //   case SYS_HALT:
-  //     break;
-  //   case SYS_PRACTICE:
-  //   case SYS_EXIT:
-  //   case SYS_EXEC:
-  //   case SYS_WAIT:
-  //   case SYS_REMOVE:
-  //   case SYS_OPEN:
-  //   case SYS_FILESIZE:
-  //   case SYS_TELL:
-  //   case SYS_CLOSE:
-  //   case SYS_MUNMAP:
-  //   case SYS_CHDIR:
-  //   case SYS_MKDIR:
-  //   case SYS_ISDIR:
-  //   case SYS_INUMBER:
-  //     if (args[1] == NULL) {
-  //       return 1;
-  //     } else if (!is_user_vaddr(&args[1]) || !is_user_vaddr(&args[1] + 3)) {
-  //       return 3;
-  //     } else if (pagedir_get_page(pd, &args[1]) == NULL 
-  //         || pagedir_get_page(pd, &args[1] + 3) == NULL) {
-  //       return 2;
-  //     } else {
-  //       break;
-  //     }
-  //   case SYS_CREATE:
-  //   case SYS_SEEK:
-  //   case SYS_MMAP:
-  //   case SYS_READDIR:
-  //     if (args[1] == NULL || args[2] == NULL) {
-  //       return 1;
-  //     } else if (!is_user_vaddr(&args[2]) || !is_user_vaddr(&args[2] + 3)) {
-  //       return 3;
-  //     } else if (pagedir_get_page(pd, &args[2]) == NULL 
-  //         || pagedir_get_page(pd, &args[2] + 3) == NULL) {
-  //       return 2;
-  //     } else {
-  //       break;
-  //     }
-  //   case SYS_WRITE:
-  //   case SYS_READ:
-  //     if (args[1] == NULL || args[2] == NULL || args[3] == NULL) {
-  //       return 1;
-  //     } else if (!is_user_vaddr(&args[3]) || !is_user_vaddr(&args[3] + 3)) {
-  //       return 3;
-  //     } else if (pagedir_get_page(pd, &args[3]) == NULL 
-  //         || pagedir_get_page(pd, &args[3] + 3) == NULL) {
-  //       return 2;
-  //     } else {
-  //       break;
-  //     }
-  //   default:
-  //       break;
-  // }
+  switch(args[0]) {
+    case SYS_HALT:
+      break;
+    case SYS_PRACTICE:
+    case SYS_EXIT:
+    case SYS_EXEC:
+    case SYS_WAIT:
+    case SYS_REMOVE:
+    case SYS_OPEN:
+    case SYS_FILESIZE:
+    case SYS_TELL:
+    case SYS_CLOSE:
+    case SYS_MUNMAP:
+    case SYS_CHDIR:
+    case SYS_MKDIR:
+    case SYS_ISDIR:
+    case SYS_INUMBER:
+      if (args[1] == NULL) {
+        return 1;
+      } else if (!is_user_vaddr(&args[1]) || !is_user_vaddr(&args[1] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[1]) == NULL 
+          || pagedir_get_page(pd, &args[1] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
+    case SYS_CREATE:
+    case SYS_SEEK:
+    case SYS_MMAP:
+    case SYS_READDIR:
+      if (args[1] == NULL || args[2] == NULL) {
+        return 1;
+      } else if (!is_user_vaddr(&args[2]) || !is_user_vaddr(&args[2] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[2]) == NULL 
+          || pagedir_get_page(pd, &args[2] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
+    case SYS_WRITE:
+    case SYS_READ:
+      if (args[1] == NULL || args[2] == NULL || args[3] == NULL) {
+        return 1;
+      } else if (!is_user_vaddr(&args[3]) || !is_user_vaddr(&args[3] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[3]) == NULL 
+          || pagedir_get_page(pd, &args[3] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
+    default:
+        break;
+  }
   return 0;
 }
 
@@ -98,37 +98,52 @@ static int in_userspace_and_notnull(uint32_t *args) {
 // Returns 2 if the file or buffer points to unmapped memory.
 // Returns 3 if the file or buffer points to memory outside of user virtual address space.
 static int is_valid_file_or_buffer(uint32_t *args) {
-  // uint32_t *pd = thread_current()->pagedir;
+  uint32_t *pd = thread_current()->pagedir;
 
-  // //precondition: args and args addresses have been verified
-  // switch (args[0]) {
-  //   case SYS_EXEC:
-  //   case SYS_CREATE:
-  //   case SYS_REMOVE:
-  //   case SYS_OPEN:
-  //     if (!is_user_vaddr(args[1])) {
-  //       return 3;
-  //     } else if (pagedir_get_page(pd, args[1]) == NULL) {
-  //       return 2;
-  //     } else if (*(args[1]) == NULL) {
-  //       return 1;
-  //     } else {
-  //       break;
-  //     }
-  //   case SYS_READ:
-  //   case SYS_WRITE:
-  //     if (!is_user_vaddr(args[2])) {
-  //       return 3;
-  //     } else if (pagedir_get_page(pd, args[2]) == NULL) {
-  //       return 2;
-  //     } else if (*(args[2]) == NULL) {
-  //       return 1;
-  //     } else {
-  //       break;
-  //     }
-  //   default:
-  //     break;
-  //   }
+  //precondition: args and args addresses have been verified
+  switch (args[0]) {
+    case SYS_EXEC:
+    case SYS_CREATE:
+    case SYS_REMOVE:
+    case SYS_OPEN:
+      if (args[1] == NULL)
+        return 1;
+      if (!is_user_vaddr(args[1]) || !is_user_vaddr(args[1] + strlen(args[1])))
+        return 3;
+      if (pagedir_get_page(pd, args[1]) == NULL || pagedir_get_page(pd, args[1] + strlen(args[1])) == NULL)
+        return 2;
+      break;
+    case SYS_READ:
+    case SYS_WRITE:
+      void * ptr = args[2];
+      if (ptr == NULL) {
+        return 1;
+      }
+      if (!is_user_vaddr(ptr)) {
+        return 3;
+      }
+      return validate_buffer(ptr, args[3], pd);
+    default:
+      break;
+    }
+  return 0;
+}
+
+static int validate_buffer(void *ptr, size_t size, uint32_t *pd) {
+  while (size > 0) {
+    if (!is_user_vaddr(ptr)) {
+      return 2;
+    }
+    size_t bytes_validated;
+    size_t page_remaining = ptr - pagedir_get_page(pd, ptr);
+    if (page_remaining > size) {
+      bytes_validated = size;
+    } else {
+      bytes_validated = page_remaining;
+    }
+    ptr += bytes_validated;
+    size -= bytes_validated;
+  }
   return 0;
 }
 
