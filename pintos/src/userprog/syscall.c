@@ -33,6 +33,7 @@ static int in_userspace_and_notnull(uint32_t *args) {
   if (args[0] == NULL) {
     return 1;
   }
+  
 
   switch(args[0]) {
     case SYS_HALT:
