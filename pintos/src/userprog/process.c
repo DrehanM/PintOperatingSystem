@@ -117,7 +117,7 @@ process_execute (const char *command)
 
   sema_down(&ws->done_loading);
   if (ws->load_error) {
-    return ws->exit_status;
+    return TID_ERROR;
   }
   return tid;
 }
@@ -271,7 +271,6 @@ start_process (void *command_)
   load_success = load (filename, &if_.eip, &if_.esp);
 
   if (!load_success) {  
-    printf("cant find file: %s\n", filename);
     ws->exit_status=1;
     ws->load_error=1;
     sema_up(&ws->done_loading);
