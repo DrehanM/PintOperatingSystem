@@ -146,14 +146,16 @@ static int validate_syscall_args(uint32_t* args) {
 static
 bool is_valid_args(uint32_t *args, int number_args) {
   // returns true if valid, false otherwise
-  bool is_user = is_user_vaddr(args) && is_user_vaddr(args + 4 * number_args - 1);
+  if (!(is_user_vaddr(args) && is_user_vaddr(args + 4 * number_args - 1))) {
+    return false;
+  }
+
   uint32_t *active_pd = thread_current()->pagedir;
 
   void *pd_beginning = pagedir_get_page(active_pd, args);
   void *pd_end = pagedir_get_page(active_pd, args + 4 * number_args - 1);
   
-  bool valid_pd = (pd_beginning != NULL && pd_end != NULL);
-  return (is_user && valid_pd);
+  return (pd_beginning != NULL && pd_end != NULL);
 }
 
 static 
@@ -161,8 +163,19 @@ bool is_valid_file(const char *file) {
   // returns whether the file is valid or not
   if (file == NULL) {
     return false;
+  } 
+
+  if (!is_valid_args((uint32_t *) file, 1)) {
+    return false;
   }
+
   return true;
+}
+
+static void 
+exit(int exit_status) {
+  printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, exit_status);
+  thread_exit_with_status (exit_status);
 }
 
 typedef struct thread_fd {
@@ -170,6 +183,7 @@ typedef struct thread_fd {
   struct file *f;
   struct list_elem elem;
 } thread_fd_t;
+
 
 static struct file *
 get_file_from_fd(int fd) {
@@ -220,6 +234,9 @@ remove(const char * file) {
 
 static int
 open(const char * file) {
+  if (!is_valid_file(file)) {
+    exit(-1);
+  }
   struct file *f = filesys_open(file);
   if (f == NULL) {
     return -1;
@@ -245,6 +262,9 @@ filesize(int fd) {
 
 static int 
 read(int fd, void *buffer, int size) {
+  if (!is_valid_file(buffer)) {
+    exit(-1);
+  }
   struct file *file_ = get_file_from_fd(fd);
   if (file_ != NULL) {
     int read_bytes = file_read(file_, buffer, size);
@@ -255,12 +275,16 @@ read(int fd, void *buffer, int size) {
 
 static int
 write(int fd, void *buffer, int size) {
-    struct file *file_ = get_file_from_fd(fd);
-    if (file_ != NULL) {
-      int written_bytes = file_write(file_, buffer, size);
-      return written_bytes;
-    }
-    return 0;
+  if (!is_valid_file(buffer)) {
+    exit(-1);
+  }
+
+  struct file *file_ = get_file_from_fd(fd);
+  if (file_ != NULL) {
+    int written_bytes = file_write(file_, buffer, size);
+    return written_bytes;
+  }
+  return 0;
 }
 
 static void
@@ -282,11 +306,7 @@ close(int fd) {
   remove_file(fd);
 }
 
-static void 
-exit(int exit_status) {
-  printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, exit_status);
-  thread_exit_with_status (exit_status);
-}
+
 
 static void
 file_operation_handler(struct intr_frame *f) {
