@@ -366,4 +366,3 @@ syscall_handler (struct intr_frame *f UNUSED)
     file_operation_handler(f);
   }
 }
-
