@@ -72,9 +72,12 @@ void decrement_all_references(struct wait_status *ws) {
   }
 	struct wait_status *child_ws;
   struct list_elem *e;
-	for (e = list_begin(&cur->children); e->next != NULL; e = e->next) {
-	    	child_ws = list_entry(e, wait_status_t, elem);
-	    	decrement_and_destroy_if_zero(child_ws);
+  struct list_elem *prev;
+	for (e = list_begin(&cur->children); e->next != NULL;) {
+      prev = e;
+      e = e->next;
+      child_ws = list_entry(prev, wait_status_t, elem);
+      decrement_and_destroy_if_zero(child_ws);
 	}
 }
 
@@ -113,8 +116,8 @@ process_execute (const char *command)
   }
 
   sema_down(&ws->done_loading);
-  if (ws->exit_status) {
-    return TID_ERROR;
+  if (ws->load_error) {
+    return ws->exit_status;
   }
   return tid;
 }
@@ -264,22 +267,30 @@ start_process (void *command_)
   struct thread *t = thread_current();
   strlcpy (t->name, filename, sizeof t->name); 
 
+  wait_status_t *ws = thread_current()->wait_status;
   load_success = load (filename, &if_.eip, &if_.esp);
 
-  arg_success = load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
-
-  /* If load failed, quit. */
-  palloc_free_page (command);
-  wait_status_t *ws = thread_current()->wait_status;
-
-  if (!load_success || !arg_success) {  
+  if (!load_success) {  
+    printf("cant find file: %s\n", filename);
     ws->exit_status=1;
     ws->load_error=1;
     sema_up(&ws->done_loading);
     thread_exit ();
   }
 
-  ws->load_error=0;
+  arg_success = load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
+
+  /* If load failed, quit. */
+  palloc_free_page (command);
+
+  if (!arg_success) {  
+    printf("cant load args\n");
+    ws->exit_status=1;
+    ws->load_error=1;
+    sema_up(&ws->done_loading);
+    thread_exit ();
+  }
+
   sema_up(&ws->done_loading);
 
   /* Start the user process by simulating a return from an
@@ -304,7 +315,6 @@ start_process (void *command_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
-  return 0;
   struct thread *curr_thread = thread_current();
   wait_status_t *ws = find_child_ws(&curr_thread->children, child_tid);
   if (ws == NULL) {
@@ -313,9 +323,10 @@ process_wait (tid_t child_tid UNUSED)
   sema_down(&ws->dead); // wait for child to die
 
   // clean up ws here
+  int exit_status = ws->exit_status;
   destroy_wait_status(ws);
 
-  return ws->exit_status;
+  return exit_status;
 }
 
 /* Free the current process's resources. */

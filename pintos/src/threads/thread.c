@@ -111,6 +111,7 @@ static void init_wait_status(wait_status_t **ws, tid_t tid) {
 	sema_init(&w->done_loading, 0);
 	w->load_error = 0;
   w->exit_status = 0;
+  w->load_error = 0;
 	lock_init(&w->lock);
 	w->reference_count = 2;
 }
@@ -317,8 +318,8 @@ thread_exit (void)
   NOT_REACHED ();
 }
 
-void thread_exit_with_status(void) {
-  thread_current()->wait_status->exit_status= -1;
+void thread_exit_with_status(int status) {
+  thread_current()->wait_status->exit_status= status;
   thread_exit();
 }
 
