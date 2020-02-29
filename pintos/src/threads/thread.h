@@ -26,6 +26,22 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+typedef struct wait_status {
+	// members to be used during WAIT syscalls
+	struct semaphore dead;			// parent calls sema down to wait for child to die, dead process calls sema up
+	int exit_status;			      //exit status of process upon termination.
+	tid_t tid;				          //process ID of the owner of this struct
+	int reference_count;			  //number of processes that point to this struct
+	struct lock lock;			      //lock to protect reference_count
+	
+	// members to be used during EXEC syscalls
+	struct semaphore done_loading;  // parent calls sema down to wait for child to load, child calls sema up
+	int load_error;                 // 0 == good, anything else is a load error. Isn't ready to be accessed until done_loading is 1
+	
+	struct list_elem elem;			//underlying list element
+} wait_status_t;
+
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -105,6 +121,11 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
+
+
+    struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
+	  struct list children;		            // List of wait_status objects shared by this thread and its children.
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -131,6 +152,7 @@ tid_t thread_tid (void);
 const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
+void thread_exit_with_status(int status);
 void thread_yield (void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */

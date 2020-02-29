@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -98,6 +99,21 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+}
+
+// Create and allocate memory for a new wait_status struct for a new process
+// Initialize the dead semaphore and reference_count lock
+static void init_wait_status(wait_status_t **ws, tid_t tid) {
+  *ws = malloc(sizeof(wait_status_t));
+  wait_status_t *w = *ws;
+	w->tid = tid;
+	sema_init(&w->dead, 0);
+	sema_init(&w->done_loading, 0);
+	w->load_error = 0;
+  w->exit_status = 0;
+  w->load_error = 0;
+	lock_init(&w->lock);
+	w->reference_count = 2;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -193,10 +209,16 @@ thread_create (const char *name, int priority,
   ef = alloc_frame (t, sizeof *ef);
   ef->eip = (void (*) (void)) kernel_thread;
 
+  /* Initialize wait status */
+  init_wait_status(&t->wait_status, t->tid);
+
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
   sf->ebp = 0;
+
+  // add to parent
+  list_push_front(&thread_current()->children, &t->wait_status->elem);
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -294,6 +316,11 @@ thread_exit (void)
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
+}
+
+void thread_exit_with_status(int status) {
+  thread_current()->wait_status->exit_status= status;
+  thread_exit();
 }
 
 /* Yields the CPU.  The current thread is not put to sleep and
@@ -462,6 +489,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  list_init (&t->children);
   list_init (&t->fd_map);
 
   old_level = intr_disable ();

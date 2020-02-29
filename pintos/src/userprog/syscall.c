@@ -9,6 +9,8 @@
 #include "../filesys/file.h"
 #include "../filesys/filesys.h"
 #include "threads/vaddr.h"
+#include "process.h"
+
 
 static void syscall_handler (struct intr_frame *);
 static struct lock global_file_lock;
@@ -378,7 +380,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   if (args[0] == SYS_EXIT) {
     f->eax = args[1];
     printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, args[1]);
-    thread_exit ();
+    thread_exit_with_status (args[1]);
   } else if (args[0] == SYS_PRACTICE) {
     f->eax = args[1] + 1;
     return;
@@ -386,8 +388,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     shutdown_power_off();
     return;
   } else if (args[0] == SYS_EXEC) {
+    f->eax = process_execute((char *)args[1]);
     return;
   } else if (args[0] == SYS_WAIT) {
+    f->eax = process_wait((int) args[1]);
     return;
   } else { // ITS FILESYSTEM CALL
     file_operation_handler(f);
