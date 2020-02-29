@@ -36,9 +36,9 @@ static int in_userspace_and_notnull(uint32_t *args) {
 
   switch(args[0]) {
     case SYS_HALT:
+    case SYS_EXIT:
       break;
     case SYS_PRACTICE:
-    case SYS_EXIT:
     case SYS_EXEC:
     case SYS_WAIT:
     case SYS_REMOVE:
