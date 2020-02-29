@@ -19,7 +19,6 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
 #include "lib/kernel/list.h"
 
 static struct semaphore temporary;
@@ -242,6 +241,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  /* Close the executable file of this thread, enabling write access. */
+  file_close(cur->executable);
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -369,13 +370,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open(file_name);
+
   if (file == NULL)
     {
       printf ("load: %s: open failed\n", file_name);
       goto done;
     }
-
+  t->executable = file;
+  file_deny_write(file);
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -459,7 +462,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
   return success;
 }
 
