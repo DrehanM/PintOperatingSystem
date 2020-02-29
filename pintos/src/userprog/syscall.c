@@ -93,6 +93,24 @@ static int in_userspace_and_notnull(uint32_t *args) {
   return 0;
 }
 
+static int validate_buffer(void *ptr, size_t size, uint32_t *pd) {
+  while (size > 0) {
+    if (!is_user_vaddr(ptr)) {
+      return 2;
+    }
+    size_t bytes_validated;
+    size_t page_remaining = ptr - pagedir_get_page(pd, ptr);
+    if (page_remaining > size) {
+      bytes_validated = size;
+    } else {
+      bytes_validated = page_remaining;
+    }
+    ptr += bytes_validated;
+    size -= bytes_validated;
+  }
+  return 0;
+}
+
 // Returns 0 if syscall is not handling a file or buffer OR if the parameter files/buffers are in valid user space, mapped correctly, and not null
 // Returns 1 if the file or buffer is a null pointer.
 // Returns 2 if the file or buffer points to unmapped memory.
@@ -115,35 +133,16 @@ static int is_valid_file_or_buffer(uint32_t *args) {
       break;
     case SYS_READ:
     case SYS_WRITE:
-      void * ptr = args[2];
-      if (ptr == NULL) {
+      if (args[2] == NULL) {
         return 1;
       }
-      if (!is_user_vaddr(ptr)) {
+      if (!is_user_vaddr((void *) args[2])) {
         return 3;
       }
-      return validate_buffer(ptr, args[3], pd);
+      return validate_buffer((void *) args[2], args[3], pd);
     default:
       break;
     }
-  return 0;
-}
-
-static int validate_buffer(void *ptr, size_t size, uint32_t *pd) {
-  while (size > 0) {
-    if (!is_user_vaddr(ptr)) {
-      return 2;
-    }
-    size_t bytes_validated;
-    size_t page_remaining = ptr - pagedir_get_page(pd, ptr);
-    if (page_remaining > size) {
-      bytes_validated = size;
-    } else {
-      bytes_validated = page_remaining;
-    }
-    ptr += bytes_validated;
-    size -= bytes_validated;
-  }
   return 0;
 }
 
