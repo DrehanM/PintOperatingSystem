@@ -26,6 +26,58 @@ static struct semaphore temporary;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+//Given a list of wait_status structs, return the wait_status that has the given PID. NULL if no match.
+static
+wait_status_t *find_child_ws(struct list *children_ws, tid_t tid) {
+	struct list_elem *e;
+	struct wait_status *ws;
+	  	for (e = list_begin(children_ws); e->next != NULL; e = e->next) {
+	    		ws = list_entry(e, wait_status_t, elem);
+	    		if (ws->tid == tid) {
+	      			return ws;
+	    		}
+	 	}
+	return NULL;  
+}
+
+//Free the memory taken up by the given wait_status struct and remove it from parent's children list.
+static
+void destroy_wait_status(struct wait_status *ws) {
+	list_remove(&ws->elem);
+	free(ws);
+}
+
+//Safely decrement the given wait status struct's reference_count. If reference_count reaches zero, destroy the wait_status.
+//returns 1 if destroyed, 0 if not
+static
+int decrement_and_destroy_if_zero(struct wait_status *ws) {
+	lock_acquire(&(ws->lock));
+	ws->reference_count--;
+	if (ws->reference_count == 0) {
+		lock_release(&(ws->lock));
+		destroy_wait_status(ws);
+    return 1;
+	}
+  lock_release(&(ws->lock));
+	return 0;
+}
+	
+//Decrement all reference_count variables shared by the current thread and cur's parent and cur's children.
+//Sema up on the current threads wait_status->dead semaphore.
+void decrement_all_references(struct wait_status *ws) {
+	struct thread *cur = thread_current();
+	int destroyed = decrement_and_destroy_if_zero(ws);
+  if (!destroyed) {
+    sema_up(&ws->dead);
+  }
+	struct wait_status *child_ws;
+  struct list_elem *e;
+	for (e = list_begin(&cur->children); e->next != NULL; e = e->next) {
+	    	child_ws = list_entry(e, wait_status_t, elem);
+	    	decrement_and_destroy_if_zero(child_ws);
+	}
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -46,8 +98,24 @@ process_execute (const char *command)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (command, PRI_DEFAULT, start_process, command_copy);
-  if (tid == TID_ERROR)
+  if (tid == TID_ERROR) {
     palloc_free_page (command_copy);
+    return TID_ERROR;
+  }
+
+  struct thread *curr = thread_current();
+  struct list *children = &curr->children;
+  wait_status_t *ws = find_child_ws(children, tid);
+
+  if (ws == NULL) {
+    printf("couldnt find child wait status\n");
+    return TID_ERROR;
+  }
+
+  sema_down(&ws->done_loading);
+  if (ws->exit_status) {
+    return TID_ERROR;
+  }
   return tid;
 }
 
@@ -202,14 +270,17 @@ start_process (void *command_)
 
   /* If load failed, quit. */
   palloc_free_page (command);
-  if (!load_success) {
-    printf("loading failed\n");
+  wait_status_t *ws = thread_current()->wait_status;
+
+  if (!load_success || !arg_success) {  
+    ws->exit_status=1;
+    ws->load_error=1;
+    sema_up(&ws->done_loading);
     thread_exit ();
   }
-  if (!arg_success) {
-    printf("stack pointer wrapped into kernel mem!\n");
-    thread_exit ();
-  }
+
+  ws->load_error=0;
+  sema_up(&ws->done_loading);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -233,8 +304,18 @@ start_process (void *command_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
-  sema_down (&temporary);
   return 0;
+  struct thread *curr_thread = thread_current();
+  wait_status_t *ws = find_child_ws(&curr_thread->children, child_tid);
+  if (ws == NULL) {
+    return -1;
+  }
+  sema_down(&ws->dead); // wait for child to die
+
+  // clean up ws here
+  destroy_wait_status(ws);
+
+  return ws->exit_status;
 }
 
 /* Free the current process's resources. */
@@ -242,6 +323,8 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  decrement_all_references(cur->wait_status);
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
