@@ -95,6 +95,9 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
     
+    /* Keeps track of the executable of this thread. */
+    struct file *executable;
+
     struct list fd_map;
 
 #ifdef USERPROG
