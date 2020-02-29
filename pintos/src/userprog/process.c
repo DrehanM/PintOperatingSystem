@@ -332,13 +332,10 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
-<<<<<<< HEAD
   /* Close the executable file of this thread, enabling write access. */
   file_close(cur->executable);
-=======
   decrement_all_references(cur->wait_status);
 
->>>>>>> origin/task2b
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
