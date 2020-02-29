@@ -143,6 +143,28 @@ static int validate_syscall_args(uint32_t* args) {
 	return 0;
 }
 
+static
+bool is_valid_args(uint32_t *args, int number_args) {
+  // returns true if valid, false otherwise
+  bool is_user = is_user_vaddr(args) && is_user_vaddr(args + 4 * number_args - 1);
+  uint32_t *active_pd = thread_current()->pagedir;
+
+  void *pd_beginning = pagedir_get_page(active_pd, args);
+  void *pd_end = pagedir_get_page(active_pd, args + 4 * number_args - 1);
+  
+  bool valid_pd = (pd_beginning != NULL && pd_end != NULL);
+  return (is_user && valid_pd);
+}
+
+static 
+bool is_valid_file(const char *file) {
+  // returns whether the file is valid or not
+  if (file == NULL) {
+    return false;
+  }
+  return true;
+}
+
 typedef struct thread_fd {
   int fd;
   struct file *f;
@@ -183,8 +205,11 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
-static bool
+static int
 create(const char * file, unsigned initial_size){
+  if (!is_valid_file(file)) {
+    exit(-1);
+  }
   return filesys_create(file, initial_size);
 }
 
@@ -255,6 +280,12 @@ close(int fd) {
   struct file *file_ = get_file_from_fd(fd);
   file_close(file_);
   remove_file(fd);
+}
+
+static void 
+exit(int exit_status) {
+  printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, exit_status);
+  thread_exit_with_status (exit_status);
 }
 
 static void
@@ -336,10 +367,20 @@ syscall_handler (struct intr_frame *f UNUSED)
     return;
   }
 
-  if (args[0] == SYS_EXIT) {
-    f->eax = args[1];
-    printf ("%s: exit(%d)\n", (char *) &thread_current ()->name, args[1]);
-    thread_exit_with_status (args[1]);
+  bool valid = is_valid_args(args, 1); // check the first arg here
+
+  if (!valid || args[0] == SYS_EXIT) {
+    int exit_status = 0;
+
+    if (!valid) {
+      exit_status = -1;
+    } else {
+      exit_status = args[1];
+    }
+
+    f->eax = exit_status;
+    exit(exit_status);
+
   } else if (args[0] == SYS_PRACTICE) {
     f->eax = args[1] + 1;
     return;
