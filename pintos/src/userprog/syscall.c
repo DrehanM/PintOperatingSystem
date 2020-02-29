@@ -33,20 +33,28 @@ static int in_userspace_and_notnull(uint32_t *args) {
   if (args[0] == NULL) {
     return 1;
   }
-  
+
 
   switch(args[0]) {
     case SYS_HALT:
     case SYS_EXIT:
       break;
+    case SYS_TELL:
+    case SYS_CLOSE:
+    case SYS_FILESIZE:
+      if (!is_user_vaddr(&args[1]) || !is_user_vaddr(&args[1] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[1]) == NULL 
+          || pagedir_get_page(pd, &args[1] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
     case SYS_PRACTICE:
     case SYS_EXEC:
     case SYS_WAIT:
     case SYS_REMOVE:
     case SYS_OPEN:
-    case SYS_FILESIZE:
-    case SYS_TELL:
-    case SYS_CLOSE:
     case SYS_MUNMAP:
     case SYS_CHDIR:
     case SYS_MKDIR:
@@ -63,7 +71,25 @@ static int in_userspace_and_notnull(uint32_t *args) {
         break;
       }
     case SYS_CREATE:
+      if (args[1] == NULL) {
+        return 1;
+      } else if (!is_user_vaddr(&args[2]) || !is_user_vaddr(&args[2] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[2]) == NULL 
+          || pagedir_get_page(pd, &args[2] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
     case SYS_SEEK:
+      if (!is_user_vaddr(&args[2]) || !is_user_vaddr(&args[2] + 3)) {
+        return 3;
+      } else if (pagedir_get_page(pd, &args[2]) == NULL 
+          || pagedir_get_page(pd, &args[2] + 3) == NULL) {
+        return 2;
+      } else {
+        break;
+      }
     case SYS_MMAP:
     case SYS_READDIR:
       if (args[1] == NULL || args[2] == NULL) {
@@ -78,7 +104,7 @@ static int in_userspace_and_notnull(uint32_t *args) {
       }
     case SYS_WRITE:
     case SYS_READ:
-      if (args[1] == NULL || args[2] == NULL || args[3] == NULL) {
+      if (args[2] == NULL) {
         return 1;
       } else if (!is_user_vaddr(&args[3]) || !is_user_vaddr(&args[3] + 3)) {
         return 3;
