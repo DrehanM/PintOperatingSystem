@@ -150,10 +150,13 @@ void get_argv_from_list(struct list *word_lst, char *argv[], size_t *argv_length
   word_t *w;
   struct list_elem *e;
   int i = 0;
-  for (e = list_begin(word_lst); e->next != NULL; e = e->next) {
+
+  for (e = list_begin(word_lst); e->next != NULL;) {
     w = list_entry(e, word_t, elem);
     argv[i] = w->word;
     argv_lengths[i] = w->length_word;
+    e = e->next;
+    free(w);
     i++;
   }
   argv[i] = NULL;
@@ -247,7 +250,7 @@ start_process (void *command_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   // make a copy of the command, because get_word_list is destructive
-  char *command_copy = malloc(strlen(command) + 1);
+  char command_copy[strlen(command) + 1];
   strlcpy(command_copy, command, strlen(command) + 1);
 
   struct list word_list;

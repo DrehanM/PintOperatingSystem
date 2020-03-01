@@ -51,11 +51,7 @@ exit(int exit_status) {
   thread_exit_with_status (exit_status);
 }
 
-typedef struct thread_fd {
-  int fd;
-  struct file *f;
-  struct list_elem elem;
-} thread_fd_t;
+
 
 
 static struct file *
