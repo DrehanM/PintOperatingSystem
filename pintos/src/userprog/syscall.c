@@ -188,21 +188,36 @@ file_operation_handler(struct intr_frame *f) {
     // LUKE AND CHRIS
 
     case SYS_CREATE:
+      if (!is_valid_args(args, 3)) {
+        exit(-1);
+      }
       f->eax = create((char *) args[1], (unsigned int) args[2]);
       break;                /* Create a file. */
     case SYS_REMOVE:
+      if (!is_valid_args(args, 2)) {
+        exit(-1);
+      }
       f->eax = remove((char *) args[1]);
       break;                 /* Delete a file. */
     case SYS_OPEN:
+      if (!is_valid_args(args, 2)) {
+        exit(-1);
+      }
       f->eax = open((char *) args[1]);
       break;                   /* Open a file. */
     case SYS_FILESIZE:
+      if (!is_valid_args(args, 2)) {
+        exit(-1);
+      }
       f->eax = filesize((int) args[1]);
       break;               /* Obtain a file's size. */
 
     // BEN AND DIEGO
 
     case SYS_READ: {
+      if (!is_valid_args(args, 4)) {
+        exit(-1);
+      }
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
@@ -210,6 +225,10 @@ file_operation_handler(struct intr_frame *f) {
       break;
     }                  /* Read from a file. */
     case SYS_WRITE: {
+      if (!is_valid_args(args, 4)) {
+        exit(-1);
+      }
+
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
@@ -221,17 +240,27 @@ file_operation_handler(struct intr_frame *f) {
       break;
     }                  /* Write to a file. */
     case SYS_SEEK: {
+      if (!is_valid_args(args, 3)) {
+        exit(-1);
+      }
+
       int new_pos = args[2];
       int fd = args[1];
       seek(fd, new_pos);
       break;            /* Change position in a file. */
     }
     case SYS_TELL: {
+      if (!is_valid_args(args, 2)) {
+        exit(-1);
+      }
       int fd = args[1];
       f->eax = tell(fd);
       break;
     }                /* Report current position in a file. */
     case SYS_CLOSE: {
+      if (!is_valid_args(args, 2)) {
+        exit(-1);
+      }
       int fd = args[1];
       close(fd);
       break;
@@ -279,7 +308,12 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = process_execute((char *)args[1]);
     return;
   } else if (args[0] == SYS_WAIT) {
+
+    if (!is_valid_args(args, 2)) {
+      exit(-1);
+    }
     f->eax = process_wait((int) args[1]);
+
     return;
   } else { // ITS FILESYSTEM CALL
     file_operation_handler(f);
