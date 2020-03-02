@@ -14,6 +14,7 @@
 #include "threads/malloc.h"
 #include "list.h"
 #include "userprog/syscall.h"
+#include "../filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -307,9 +308,12 @@ destroy_thread_fd(void)
   thread_fd_t *w;
 
   lock_acquire(&t->fd_lock);
+  struct file *returned_file = NULL;
   while (!list_empty (l)) {
     struct list_elem *e = list_pop_front (l);
     w = list_entry(e, thread_fd_t, elem);
+    returned_file = w->f;
+    file_close(returned_file);
     free(w);
   }
   lock_release(&t->fd_lock);
@@ -331,7 +335,7 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  // destroy_thread_fd();
+  destroy_thread_fd();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
