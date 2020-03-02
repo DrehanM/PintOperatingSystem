@@ -115,6 +115,8 @@ struct thread
     /* Keeps track of the executable of this thread. */
     struct file *executable;
 
+    struct lock fd_lock;
+
     struct list fd_map;
 
 #ifdef USERPROG
@@ -152,7 +154,7 @@ struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
-void destroy_thread_fd();
+void destroy_thread_fd(void);
 void thread_exit (void) NO_RETURN;
 void thread_exit_with_status(int status);
 void thread_yield (void);
