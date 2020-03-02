@@ -12,6 +12,8 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "list.h"
+#include "userprog/syscall.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -198,7 +200,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-
+  
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -297,6 +299,19 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
+void
+destroy_thread_fd(void) 
+{ 
+  struct thread *t = thread_current();
+  struct list l = t->fd_map;
+  struct list_elem *e;
+  for (e = list_begin(&l); e != list_tail(&l); ) {
+    thread_fd_t *w = list_entry(e, thread_fd_t, elem);
+    e = e->next;
+    // free(w);
+  }
+}
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
@@ -312,6 +327,7 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
+  // destroy_thread_fd();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();

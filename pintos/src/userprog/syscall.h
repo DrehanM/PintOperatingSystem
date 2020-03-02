@@ -10,6 +10,6 @@ typedef struct thread_fd {
 } thread_fd_t;
 
 void syscall_init (void);
-// void file_operation_handler(struct intr_frame *f);
+void close_thread_fd(thread_fd_t *fd);
 
 #endif /* userprog/syscall.h */
