@@ -61,12 +61,12 @@ exit_file_call(int exit_status) {
 static struct file *
 get_file_from_fd(int fd) {
   struct thread *t = thread_current();
-  struct list l = t->fd_map;
+  struct list *l = &t->fd_map;
   struct file *returned_file = NULL;
 
   lock_acquire(&t->fd_lock);
   thread_fd_t *w;
-  for (struct list_elem *e = list_begin(&l); e->next != NULL; e = e->next) {
+  for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
     if (w->fd == fd) {
       returned_file = w->f;
@@ -82,9 +82,9 @@ remove_file(int fd) {
   struct thread *t = thread_current();
   
   lock_acquire(&t->fd_lock);
-  struct list l = t->fd_map;
+  struct list *l = &t->fd_map;
   thread_fd_t *w;
-  for (struct list_elem *e = list_begin(&l); e->next != NULL; e = e->next) {
+  for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
     if (w->fd == fd) {
       list_remove(e);
@@ -137,8 +137,8 @@ open(const char * file) {
 
   lock_acquire(&t->fd_lock);
 
-  struct list l = thread_current()->fd_map;
-  list_push_back(&l, &fd->elem);
+  struct list *l = &thread_current()->fd_map;
+  list_push_front(l, &fd->elem);
 
   lock_release(&t->fd_lock);
 

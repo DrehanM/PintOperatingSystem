@@ -88,21 +88,21 @@ tid_t
 process_execute (const char *command)
 {
   // printf("%s\n", command);
-  char *command_copy;
+  char command_copy[strlen(command) + 1];
+  strlcpy (command_copy, command, strlen(command) + 1);
+
   tid_t tid;
 
   sema_init (&temporary, 0);
   /* Make a copy of command.
      Otherwise there's a race between the caller and load(). */
-  command_copy = palloc_get_page (0);
+  // command_copy = palloc_get_page (0);
   if (command_copy == NULL)
     return TID_ERROR;
-  strlcpy (command_copy, command, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (command, PRI_DEFAULT, start_process, command_copy);
   if (tid == TID_ERROR) {
-    palloc_free_page(command_copy);
     return TID_ERROR;
   }
 
@@ -151,6 +151,7 @@ void get_argv_from_list(struct list *word_lst, char *argv[], size_t *argv_length
   word_t *w;
   struct list_elem *e;
   int i = 0;
+
 
   for (e = list_begin(word_lst); e->next != NULL;) {
     w = list_entry(e, word_t, elem);
@@ -253,7 +254,7 @@ start_process (void *command_)
   // make a copy of the command, because get_word_list is destructive
   char command_copy[strlen(command) + 1];
   strlcpy(command_copy, command, strlen(command) + 1);
-  palloc_free_page(command);
+  // palloc_free_page(command);
 
   struct list word_list;
   list_init(&word_list);

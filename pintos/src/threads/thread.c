@@ -303,12 +303,12 @@ void
 destroy_thread_fd(void) 
 { 
   struct thread *t = thread_current();
-  struct list l = t->fd_map;
+  struct list *l = &t->fd_map;
   thread_fd_t *w;
 
   lock_acquire(&t->fd_lock);
-  while (!list_empty (&l)) {
-    struct list_elem *e = list_pop_front (&l);
+  while (!list_empty (l)) {
+    struct list_elem *e = list_pop_front (l);
     w = list_entry(e, thread_fd_t, elem);
     free(w);
   }
