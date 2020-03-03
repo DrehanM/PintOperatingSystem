@@ -18,9 +18,9 @@ Luke Dai -  File Operation Syscalls
 
 Christopher DeVore - File Operation Syscalls, Argument Passing
 
-Dre Maharachi - Argument Validation
+Dre Mahaarachchi - Argument Validation, Process System Calls
 
-Benjamin Ulrich - Argument Passing, File Operation Syscall, Argument Validation
+Benjamin Ulrich - Argument Passing, File Operation Syscalls, Argument Validation, Process System Calls
 
-Diego Uribe - File Operation Syscall, Argument Passing. Argument Validation
+Diego Uribe - File Operation Syscalls, Argument Passing, Argument Validation
 
