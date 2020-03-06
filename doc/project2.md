@@ -9,7 +9,6 @@ Design Document for Project 2: Threads
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
 
-=======
 # Task 1: Efficient Alarm Clock
 
 # Task 2: Priority Scheduler
