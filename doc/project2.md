@@ -16,6 +16,21 @@ Task 2 consists of implementing the priority scheduler and priority donation. Th
 
 ## Section 2a: Priority Scheduler
 
+### Data Structures and Functions
+We will create a function `priority_comparator` which compares two `list_elem`s for threads and returns true if the first thread is of lower priority than the second. This will be used as an argument for the `list_max` function. 
+
+### Algorithms
+The majority of this aspect of priority scheduling is already implemented in the `list` library file and in `schedule` within `thread.c`. We will change `list_pop_front` to `list_max` in the `next_thread_to_run` function of `thread.c` so that when a new thread is chosen from the ready queue it chooses the one with highest priority. 
+
+### Synchronization
+Synchronization is already handled by the thread scheduler, so this is not of concern.
+
+### Rationale
+Priority is incorporated into the list of processes in THREAD_READY state by popping items off `ready_list` in order of priority, rather than in FIFO order. This is done using the function `list_max` for the included list struct, which takes as a parameter a function `priority_comparator` to compare the priority of threads. Although we could alternatively use `list_insert_ordered` to maintain a list that is sorted by priority from which we can easily pop off the highest priority thread, the fact that we are also implementing priority donation means that threads within the list may change priority, requiring the list to be sorted again. Both functions `list_max` and `list_insert_ordered` are O(N) time complexity with N being the length of the list, so `list_max` is used to avoid the need for additional sorting.
+
+When a thread is created or calls `thread_yield`, it is first placed in `ready_list`, so control will return to that thread if it has the highest priority. Otherwise the highest priority thread is scheduled as desired.
+
+
 ## Section 2b: Priority Donation
 
 ### Data Structures and Functions
