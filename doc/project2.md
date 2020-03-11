@@ -116,12 +116,14 @@ Monitors:
 # Additional Questions
 
 ### 1
-
 from pg 11-12 of project spec:
 
-Member of struct thread: uint8_t *stack
+"Member of struct thread: uint8_t *stack
 
 Every thread has its own stack to keep track of its state. When the thread is running, the CPU’s
 stack pointer register tracks the top of the stack and this member is unused. But when the CPU
 switches to another thread, this member saves the thread’s stack pointer. No other members are needed to save the thread’s registers, because the other registers that must be saved are saved on
-the stack.
+the stack."
+
+### 2
+When thread_exit is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
