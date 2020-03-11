@@ -18,7 +18,9 @@ Task 2 consists of implementing the priority scheduler and priority donation. Th
 
 ### Data Structures and Functions
 We will create a function `priority_comparator` which compares two `list_elem`s for threads and returns true if the first thread is of lower priority than the second. This will be used as an argument for the `list_max` function. 
-
+```
+bool priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
+```
 ### Algorithms
 The majority of this aspect of priority scheduling is already implemented in the `list` library file and in `schedule` within `thread.c`. We will change `list_pop_front` to `list_max` in the `next_thread_to_run` function of `thread.c` so that when a new thread is chosen from the ready queue it chooses the one with highest priority. 
 
