@@ -86,7 +86,7 @@ typedef struct priority {
 } priority_t;
 ```
 
-We will create a function `priority_comparator` which compares two `list_elem`s for `priority_t` and returns true if the first `list_elem` is of lower priority than the second. This will be used as an argument for the `list_max` function. 
+We will create a function `resource_priority_comparator` which compares two `list_elem`s for `priority` and returns true if the first `list_elem` is of lower priority than the second. This will be used as an argument for the `list_max` function. 
 ```
 bool resource_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
 ```
