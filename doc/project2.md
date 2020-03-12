@@ -90,22 +90,26 @@ void decrement_priority(void *resource_address) {};
 
 This function sets the priority of a thread to prioriy and adds a list element containing the resource_address and the priority value to the threads priority_donation_list.
 ```
-void donate_priority(void *resource_address, int prioriy) {};
+void donate_priority(thread_t *thread, void *resource_address, int prioriy) {};
 ```
 ### Algorithms
+#### Lock Priority Donation
 
-The function `decrement_priority` will iterate through the priority_donation_list to look up the priority that was donated by the shared resource that was just released. If the donated priority is the same as the current priority of the thread this function will set the threads priority to the next highest priority donated. If the donated priority is lower than the current priority of the thread this function will not change the threads priority. In both cases, the priority list element for this donated priority will be removed for the priority_donation_list. If the thread decreases its priority we will need to call thread_yield().
+The function `decrement_priority` will iterate through the priority_donation_list to look up the priority that was donated by the shared resource that was just released. If the donated priority is the same as the current priority of the thread this function will set the threads priority to the next highest priority donated. If the donated priority is lower than the current priority of the thread this function will not change the threads priority. In both cases, the priority list element for this donated priority will be removed for the priority_donation_list. If the thread decreases its priority we will need to call thread_yield(). 
 
-Locks:
-When a thread calls lock_acquire there are two possibilities: it succesfully acquires the lock or it goes to sleep. If the thread succesfully acquires the lock we will not change its priority. However, if it fails to acquire the lock we will donate our priority to the lock holder using the `donate_priority` function. Since our scheduler always runs the highest priority thread first, we know that the lock holder will always have a lower priority than the thread attempting to acquire it so we just donate it directly. Similarly, when a thread releases a lock we will just call the decrement_priority.
+When a thread calls `lock_acquire` there are two possibilities: it succesfully acquires the lock or it goes to sleep. If the thread succesfully acquires the lock we will not change its priority. However, if it fails to acquire the lock we will donate our priority to the lock holder using the `donate_priority` function. Since our scheduler always runs the highest priority thread first, we know that the lock holder will always have a lower priority than the thread attempting to acquire it so we just donate it directly. Similarly, when a thread releases a lock we will just call the `decrement_priority`.
 
-Sempahores:
+#### Synchronized Shared Resource Preference
 
+We need to modify the implementation of synchronization shared resources like semaphores, locks, and condition variables so that they give preference to higher priority threads. Locks and condition variables are implemented using semaphores so if we give prefernece to higher priority threads in semaphores, locks and condition variables will follow. 
 
-Monitors:
+In order to give preference to higher priority threads in semaphores we just need to sort the list of waiting threads `waiters` everytime a thread calls sema_up(). This will ensure that when a thread holding the semaphore and releases it by calling sema_up(), the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase the list will be eventually sorted by sema_up().
+
 
 
 ### Synchronization
+The list of waiting threads `waiters` will be sorted inside the disabled interrupts section of sema_up(), thus it is atomic. This ensures that the priority of the threads do not change between sorting and unblocking the next thread. 
+
 
 
 ### Rationale
