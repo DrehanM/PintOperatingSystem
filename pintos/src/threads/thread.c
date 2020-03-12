@@ -12,6 +12,9 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "list.h"
+#include "userprog/syscall.h"
+#include "../filesys/file.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -198,7 +201,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-
+  
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -297,6 +300,25 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
+void
+destroy_thread_fd(void) 
+{ 
+  struct thread *t = thread_current();
+  struct list *l = &t->fd_map;
+  thread_fd_t *w;
+
+  lock_acquire(&t->fd_lock);
+  struct file *returned_file = NULL;
+  while (!list_empty (l)) {
+    struct list_elem *e = list_pop_front (l);
+    w = list_entry(e, thread_fd_t, elem);
+    returned_file = w->f;
+    file_close(returned_file);
+    free(w);
+  }
+  lock_release(&t->fd_lock);
+}
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
@@ -305,6 +327,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+  destroy_thread_fd ();
   process_exit ();
 #endif
 
@@ -312,6 +335,7 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
+  destroy_thread_fd();
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
@@ -492,6 +516,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   list_init (&t->children);
   list_init (&t->fd_map);
+  lock_init(&t->fd_lock);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

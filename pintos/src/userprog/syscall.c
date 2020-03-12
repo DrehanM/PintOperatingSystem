@@ -10,6 +10,7 @@
 #include "../filesys/filesys.h"
 #include "threads/vaddr.h"
 #include "process.h"
+#include "threads/palloc.h"
 
 
 static void syscall_handler (struct intr_frame *);
@@ -51,37 +52,47 @@ exit(int exit_status) {
   thread_exit_with_status (exit_status);
 }
 
-typedef struct thread_fd {
-  int fd;
-  struct file *f;
-  struct list_elem elem;
-} thread_fd_t;
-
+static void
+exit_file_call(int exit_status) {
+  lock_release(&global_file_lock);
+  exit(exit_status);
+}
 
 static struct file *
 get_file_from_fd(int fd) {
-  struct list l = thread_current()->fd_map;
+  struct thread *t = thread_current();
+  struct list *l = &t->fd_map;
+  struct file *returned_file = NULL;
+
+  lock_acquire(&t->fd_lock);
   thread_fd_t *w;
-  for (struct list_elem *e = list_begin(&l); e->next != NULL; e = e->next) {
+  for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
     if (w->fd == fd) {
-      return w->f;
+      returned_file = w->f;
+      break;
     }
   }
-  return NULL;
+  lock_release(&t->fd_lock);
+  return returned_file;
 }
 
 static void
 remove_file(int fd) {
-  struct list l = thread_current()->fd_map;
+  struct thread *t = thread_current();
+  
+  lock_acquire(&t->fd_lock);
+  struct list *l = &t->fd_map;
   thread_fd_t *w;
-  for (struct list_elem *e = list_begin(&l); e->next != NULL; e = e->next) {
+  for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
     if (w->fd == fd) {
       list_remove(e);
-      return;
+      free(w);
+      break;
     }
   }
+  lock_release(&t->fd_lock);
   return;
 }
 
@@ -95,7 +106,7 @@ syscall_init (void)
 static int
 create(const char * file, unsigned initial_size){
   if (!is_valid_file(file)) {
-    exit(-1);
+    exit_file_call(-1);
   }
   return filesys_create(file, initial_size);
 }
@@ -108,7 +119,7 @@ remove(const char * file) {
 static int
 open(const char * file) {
   if (!is_valid_file(file)) {
-    exit(-1);
+    exit_file_call(-1);
   }
   struct file *f = filesys_open(file);
   if (f == NULL) {
@@ -119,10 +130,18 @@ open(const char * file) {
     file_close(f);
     return -1;
   }
+
   fd->fd = fd_count;
   fd->f = f;
-  struct list l = thread_current()->fd_map;
-  list_push_back(&l, &fd->elem);
+  struct thread *t = thread_current();
+
+  lock_acquire(&t->fd_lock);
+
+  struct list *l = &thread_current()->fd_map;
+  list_push_front(l, &fd->elem);
+
+  lock_release(&t->fd_lock);
+
   fd_count++;
   return fd_count-1;
 }
@@ -136,7 +155,7 @@ filesize(int fd) {
 static int 
 read(int fd, void *buffer, int size) {
   if (!is_valid_file(buffer)) {
-    exit(-1);
+    exit_file_call(-1);
   }
   struct file *file_ = get_file_from_fd(fd);
   if (file_ != NULL) {
@@ -149,7 +168,7 @@ read(int fd, void *buffer, int size) {
 static int
 write(int fd, void *buffer, int size) {
   if (!is_valid_file(buffer)) {
-    exit(-1);
+    exit_file_call(-1);
   }
 
   struct file *file_ = get_file_from_fd(fd);
@@ -179,6 +198,10 @@ close(int fd) {
   remove_file(fd);
 }
 
+void
+close_thread_fd(thread_fd_t *fd) {
+  close(fd->fd);
+}
 
 static void
 file_operation_handler(struct intr_frame *f) {
@@ -189,25 +212,25 @@ file_operation_handler(struct intr_frame *f) {
 
     case SYS_CREATE:
       if (!is_valid_args(args, 3)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       f->eax = create((char *) args[1], (unsigned int) args[2]);
       break;                /* Create a file. */
     case SYS_REMOVE:
       if (!is_valid_args(args, 2)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       f->eax = remove((char *) args[1]);
       break;                 /* Delete a file. */
     case SYS_OPEN:
       if (!is_valid_args(args, 2)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       f->eax = open((char *) args[1]);
       break;                   /* Open a file. */
     case SYS_FILESIZE:
       if (!is_valid_args(args, 2)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       f->eax = filesize((int) args[1]);
       break;               /* Obtain a file's size. */
@@ -216,7 +239,7 @@ file_operation_handler(struct intr_frame *f) {
 
     case SYS_READ: {
       if (!is_valid_args(args, 4)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       int size = args[3];
       void *buffer = (void *)args[2];
@@ -226,7 +249,7 @@ file_operation_handler(struct intr_frame *f) {
     }                  /* Read from a file. */
     case SYS_WRITE: {
       if (!is_valid_args(args, 4)) {
-        exit(-1);
+        exit_file_call(-1);
       }
 
       int size = args[3];
@@ -241,7 +264,7 @@ file_operation_handler(struct intr_frame *f) {
     }                  /* Write to a file. */
     case SYS_SEEK: {
       if (!is_valid_args(args, 3)) {
-        exit(-1);
+        exit_file_call(-1);
       }
 
       int new_pos = args[2];
@@ -251,7 +274,7 @@ file_operation_handler(struct intr_frame *f) {
     }
     case SYS_TELL: {
       if (!is_valid_args(args, 2)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       int fd = args[1];
       f->eax = tell(fd);
@@ -259,7 +282,7 @@ file_operation_handler(struct intr_frame *f) {
     }                /* Report current position in a file. */
     case SYS_CLOSE: {
       if (!is_valid_args(args, 2)) {
-        exit(-1);
+        exit_file_call(-1);
       }
       int fd = args[1];
       close(fd);

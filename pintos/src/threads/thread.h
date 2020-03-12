@@ -104,6 +104,7 @@ struct thread
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
+
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
@@ -113,6 +114,8 @@ struct thread
     
     /* Keeps track of the executable of this thread. */
     struct file *executable;
+
+    struct lock fd_lock;
 
     struct list fd_map;
 
@@ -151,6 +154,7 @@ struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
+void destroy_thread_fd(void);
 void thread_exit (void) NO_RETURN;
 void thread_exit_with_status(int status);
 void thread_yield (void);

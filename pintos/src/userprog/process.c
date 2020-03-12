@@ -87,21 +87,22 @@ void decrement_all_references(struct wait_status *ws) {
 tid_t
 process_execute (const char *command)
 {
-  char *command_copy;
+  // printf("%s\n", command);
+  char command_copy[strlen(command) + 1];
+  strlcpy (command_copy, command, strlen(command) + 1);
+
   tid_t tid;
 
   sema_init (&temporary, 0);
   /* Make a copy of command.
      Otherwise there's a race between the caller and load(). */
-  command_copy = palloc_get_page (0);
+  // command_copy = palloc_get_page (0);
   if (command_copy == NULL)
     return TID_ERROR;
-  strlcpy (command_copy, command, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (command, PRI_DEFAULT, start_process, command_copy);
   if (tid == TID_ERROR) {
-    palloc_free_page (command_copy);
     return TID_ERROR;
   }
 
@@ -150,10 +151,17 @@ void get_argv_from_list(struct list *word_lst, char *argv[], size_t *argv_length
   word_t *w;
   struct list_elem *e;
   int i = 0;
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> cf19c7b13506af03e165b04f9c8948e3cb1d3bbf
   for (e = list_begin(word_lst); e->next != NULL;) {
     w = list_entry(e, word_t, elem);
     argv[i] = w->word;
     argv_lengths[i] = w->length_word;
+    e = e->next;
+    free(w);
     i++;
     e = e->next;
     free(w);
@@ -249,14 +257,14 @@ start_process (void *command_)
   if_.eflags = FLAG_IF | FLAG_MBS;
 
   // make a copy of the command, because get_word_list is destructive
-  char *command_copy = malloc(strlen(command) + 1);
+  char command_copy[strlen(command) + 1];
   strlcpy(command_copy, command, strlen(command) + 1);
+  // palloc_free_page(command);
 
   struct list word_list;
   list_init(&word_list);
 
   get_word_list(command_copy, &word_list);
-  // free(command);
 
   int argc = list_size(&word_list);
   char *argv[argc+1];
@@ -271,6 +279,7 @@ start_process (void *command_)
   wait_status_t *ws = thread_current()->wait_status;
   load_success = load (filename, &if_.eip, &if_.esp);
 
+
   if (!load_success) {  
     ws->exit_status=1;
     ws->load_error=1;
@@ -279,10 +288,6 @@ start_process (void *command_)
   }
 
   arg_success = load_arguments_to_stack(argc, argv, argv_lengths, &if_.esp);
-
-  /* If load failed, quit. */
-  palloc_free_page (command);
-
   if (!arg_success) {  
     printf("cant load args\n");
     ws->exit_status=1;
@@ -334,12 +339,13 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  // destroy_thread_fd();
+
   /* Close the executable file of this thread, enabling write access. */
   file_close(cur->executable);
   decrement_all_references(cur->wait_status);
-
   uint32_t *pd;
-
+  
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
