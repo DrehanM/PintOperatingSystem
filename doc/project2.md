@@ -71,13 +71,13 @@ struct thread
 #endif
 
     struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
-	  struct list children;		            // List of wait_status objects shared by this thread and its children.
+    struct list children;		// List of wait_status objects shared by this thread and its children.
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
 ```
-We will also define the following struct in thread.h. This struct will compose the priority donation list defined above.
+We will also define the following struct in thread.h. This struct will compose the `priority_donation_list` defined above.
 
 ```
 typedef struct priority {
@@ -87,12 +87,12 @@ typedef struct priority {
 } priority_t;
 ```
 
-When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its priority_donation_list.
+When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its `priority_donation_list`.
 ```
 void decrement_priority(void *resource_address) {};
 ```
 
-This function sets the priority of a thread to prioriy and adds a list element containing the resource_address and the priority value to the threads priority_donation_list.
+This function sets the priority of a thread to prioriy and adds a list element containing the `resource_address` and the `priority` value to the thread's `priority_donation_list`.
 ```
 void donate_priority(thread_t *thread, void *resource_address, int prioriy) {};
 ```
@@ -100,7 +100,7 @@ void donate_priority(thread_t *thread, void *resource_address, int prioriy) {};
 ### Algorithms
 #### Lock Priority Donation
 
-The function `decrement_priority` will iterate through the priority_donation_list to look up the priority that was donated by the shared resource that was just released. If the donated priority is the same as the current priority of the thread this function will set the threads priority to the next highest priority donated. If the donated priority is lower than the current priority of the thread this function will not change the threads priority. In both cases, the priority list element for this donated priority will be removed for the priority_donation_list. If the thread decreases its priority we will need to call thread_yield(). 
+The function `decrement_priority` will iterate through the priority_donation_list to look up the priority that was donated by the shared resource that was just released. If the donated priority is the same as the current priority of the thread this function will set the thread's priority to the next highest priority donated. If the donated priority is lower than the current priority of the thread this function will not change the thread's priority. In both cases, the priority list element for this donated priority will be removed for the `priority_donation_list`. If the thread decreases its priority we will need to call `thread_yield()`. 
 
 When a thread calls `lock_acquire` there are two possibilities: it succesfully acquires the lock or it goes to sleep. If the thread succesfully acquires the lock we will not change its priority. However, if it fails to acquire the lock we will donate our priority to the lock holder using the `donate_priority` function. Since our scheduler always runs the highest priority thread first, we know that the lock holder will always have a lower priority than the thread attempting to acquire it so we just donate it directly. Similarly, when a thread releases a lock we will just call the `decrement_priority`.
 
