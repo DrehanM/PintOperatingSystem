@@ -190,3 +190,64 @@ the stack."
 ### 2
 When `thread_exit` is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
 This is necessary because `thread_exit` is called by the thread which is exiting. We cannot free the stack and TCB of this thread while it is running, so we need to wait for a new thread to be scheduled and start running before we can free the page of the old thread. 
+
+### 3
+`thread_tick` funs in an external interrupt context, which means that the instructions of the function are not traditionally scheduled on the CPU and occur from an external device interrupt. Therefore, the function cannot run within a user stack. `thread_tick` runs on the kernel stack.
+
+### 4
+Consider 4 threads T1, T2, T3, T4 where base priorities are T1 < T2 < T3 < T4. 
+- T1 runs and obtains a lock L1. 
+- T2 runs and obtains a lock L2. 
+- T4 runs and attempts to obtain lock L2. 
+- T2's priority is upgrade to T4's priority. 
+- T3 runs and attempts to obtain lock L1. 
+- T1's priority is upgrade to T3's priority. 
+- T2 runs and attempts to obtain lock L1. 
+- At this point, T2 and T3 are now waiting on the semaphore of L1 to be upped by T1. 
+
+If priority donation is working, then T2 will be unblocked before T3 since T4 has donated its priority to T2 while T2 holds lock L2. The opposite is true if sema_up only considers base priorities. We will write a test to ensure that T2 is unblocked before T3. 
+
+*Thread T(N) has priority N*
+
+Expected output:
+```
+# -*- perl -*-
+use strict;
+use warnings;
+use tests::tests;
+check_expected ([<<'EOF']);
+(priority-sema-effective) begin
+(priority-sema-effective) Thread T1 acquired lock L1 and downed semaphore on L1.
+(priority-sema-effective) Thread T2 acquired lock L2 and downed semaphore on L2.
+(priority-sema-effective) Thread T4 downed semaphore on L2.
+(priority-sema-effective) Thread T3 downed semaphore on L1.
+(priority-sema-effective) Thread T2 downed semaphore on L1.
+(priority-sema-effective) Thread T1 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T2 acquired lock L1.
+(priority-sema-effective) Thread T2 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T4 acquired lock L2.
+(priority-sema-effective) Thread T4 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T2 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T3 acquired lock L1.
+(priority-sema-effective) Thread T3 upped semaphore on L1 and released L1.
+EOF
+```
+
+Actual output:
+```
+# -*- perl -*-
+(priority-sema-effective) begin
+(priority-sema-effective) Thread T1 acquired lock L1 and downed semaphore on L1.
+(priority-sema-effective) Thread T2 acquired lock L2 and downed semaphore on L2.
+(priority-sema-effective) Thread T4 downed semaphore on L2.
+(priority-sema-effective) Thread T3 downed semaphore on L1.
+(priority-sema-effective) Thread T2 downed semaphore on L1.
+(priority-sema-effective) Thread T1 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T3 acquired lock L1.
+(priority-sema-effective) Thread T3 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T2 acquired lock L1.
+(priority-sema-effective) Thread T2 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T4 acquired lock L2.
+(priority-sema-effective) Thread T4 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T2 upped semaphore on L1 and released L1.
+```
