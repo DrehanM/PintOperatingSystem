@@ -61,7 +61,6 @@ struct thread
     
     /* 
     Keeps track of the priority donations made to this thread and the shared resource that caused the donation. 
-    Will be sorted by priorty. 
     */
     struct list priority_donation_list;
 
@@ -71,7 +70,7 @@ struct thread
 #endif
 
     struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
-    struct list children;		// List of wait_status objects shared by this thread and its children.
+    struct list children;		            // List of wait_status objects shared by this thread and its children.
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -87,6 +86,11 @@ typedef struct priority {
 } priority_t;
 ```
 
+We will create a function `priority_comparator` which compares two `list_elem`s for `priority_t` and returns true if the first `list_elem` is of lower priority than the second. This will be used as an argument for the `list_max` function. 
+```
+bool resource_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
+```
+
 When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its `priority_donation_list`.
 ```
 void decrement_priority(void *resource_address) {};
@@ -100,27 +104,27 @@ void donate_priority(thread_t *thread, void *resource_address, int prioriy) {};
 ### Algorithms
 #### Lock Priority Donation
 
-The function `decrement_priority` will iterate through the priority_donation_list to look up the priority that was donated by the shared resource that was just released. If the donated priority is the same as the current priority of the thread this function will set the thread's priority to the next highest priority donated. If the donated priority is lower than the current priority of the thread this function will not change the thread's priority. In both cases, the priority list element for this donated priority will be removed for the `priority_donation_list`. If the thread decreases its priority we will need to call `thread_yield()`. 
+The function `decrement_priority` will iterate through the `priority_donation_list` to look up the priority that was donated by the shared resource that was just released. If the donated priority is lower than the current priority of the thread this function will not change the thread's priority. If the donated priority is the same as the current priority of the thread this function will set the thread's priority to the next highest priority donated. We can find the next highest priority donated by calling `list_max` on `priority_donation_list` using the `resource_priority_comparator`. This will take O(N) time where N is the number of elements in `priority_donation_list`. In both cases, the priority list element for this donated priority will be removed for the `priority_donation_list`. If the thread decreases its priority we will need to call `thread_yield()`. 
 
-When a thread calls `lock_acquire` there are two possibilities: it succesfully acquires the lock or it goes to sleep. If the thread succesfully acquires the lock we will not change its priority. However, if it fails to acquire the lock we will donate our priority to the lock holder using the `donate_priority` function. Since our scheduler always runs the highest priority thread first, we know that the lock holder will always have a lower priority than the thread attempting to acquire it so we just donate it directly. Similarly, when a thread releases a lock we will just call the `decrement_priority`.
+When a thread calls `lock_acquire` there are two possibilities: it succesfully acquires the lock or it goes to sleep. If the thread succesfully acquires the lock we will not change its priority. However, if it fails to acquire the lock we will donate our priority to the lock holder using the `donate_priority` function. Since our scheduler always runs the highest priority thread first, we know that the lock holder will always have an equal or lower priority than the thread attempting to acquire it so we just donate it directly. Similarly, when a thread releases a lock we will just call the `decrement_priority`.
 
 #### Synchronized Shared Resource Preference
 
 We need to modify the implementation of synchronization shared resources like semaphores, locks, and condition variables so that they give preference to higher priority threads. 
 
 Semaphore:
-In order to give preference to higher priority threads in semaphores we just need to sort the list of waiting threads `waiters` everytime a thread calls sema_up(). This will ensure that when a thread holding the semaphore and releases it by calling sema_up(), the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase the list will be eventually sorted by sema_up().
+In order to give preference to higher priority threads in semaphores we just need to find the highest priority thread in the list of waiting threads `waiters` everytime a thread calls `sema_up()`. We can find the highest priority thread in `waiters` by calling `list_max` on `priority_donation_list` using the `priority_comparator`. This takes O(N) time where N is the numner of elements in the `waiters`. This will ensure that when a thread holding the semaphore and releases it by calling `sema_up()`, the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase sema_up() will find the highest priority thread everytime it is called.
 
 Lock:
 Since locks are implemented using a semaphore initialized to value one, if semaphores give preference to higher priority threads so will our lock. 
 
 Condition Variable:
-Similar to semaphore, condition variables release based off of a `waiters` list. The `waiters` list contains a list of semaphores, and each of the semaphores have one thread that is waiting on the semaphore to be upped. Thus in `cond_signal()`, we can sort the `cond->waiters` list by the threads priority before we `list_pop_front`. We make these two function calls atomic by disabling syscalls. 
+Similar to semaphore, condition variables release based off of a `waiters` list. The `waiters` list contains a list of semaphores, and each of the semaphores have one thread that is waiting on the semaphore to be upped. Thus in `cond_signal()`, we can find the highest priority thread in the `cond->waiters` list by calling `list_max`. We make these two function calls atomic by disabling syscalls. 
 
 ### Synchronization
-For semaphore, the list of waiting threads `waiters` will be sorted inside the disabled interrupts section of sema_up(), thus it is atomic. This ensures that the priority of the threads do not change between sorting and unblocking the next thread. 
+For semaphore, we find the highest priority thread in the `waiters` inside the disabled interrupts section of sema_up(), thus it is atomic. This ensures that the priority of the threads do not change between sorting and unblocking the next thread. 
 
-Similarly for condition variable, sorting and popping `waiters` is within a disabled interrupt section, ensuring that priorities aren't changed through an interrupt.
+Similarly for condition variable, finding the highest priority thread in `waiters` is within a disabled interrupt section, ensuring that priorities aren't changed through an interrupt.
 
 ### Rationale
 #### Lock priority:
@@ -135,12 +139,12 @@ If `priority_donation_list` is empty, we instead revert `priority` to `original_
 
 #### Synchronized Shared Resource Preference:
 Currently threads that are waiting for the semaphore are unblocked in a FIFO fashion. 
-Instead of this, since we want the highest priority threads to be unblocked first, we simply unblock the highest priority thread by sorting the list in descending order of priority and popping off the front of the list.
+Instead of this, since we want the highest priority threads to be unblocked first, we simply unblock the highest priority thread by calling the `list_max` function on the `waiters` list using an appropiate comparator.
 
 Similar to what we described above, a lock is a sempahore with a value of one. Since semaphores are implemented to give control to higher priority threads, transitively so will locks. 
 
 Lastly condition variables were similar to semaphores in that `cond_signal()` unblocked threads in a FIFO fashion.
-By doing the same modification as in semaphores, we made sure sort the list before popping off and unblocking a thread to run. 
+By doing the same modification as in semaphores, we made sure to unblock the highest priority thread in the `waiters` by calling `list_max`. 
 
 # Task 3: Scheduling Lab
 
