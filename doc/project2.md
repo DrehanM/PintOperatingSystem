@@ -10,6 +10,7 @@ Design Document for Project 2: Threads
 * Diego Uribe <diego.uribe@berkeley.edu>
 
 # Task 1: Efficient Alarm Clock
+
 ### Data Structures and Functions
 ```
 /* threads/threads.h */
@@ -25,7 +26,7 @@ struct list sleeping_threads; // keeps track of threads that are currently sleep
 
 ### Algorithms
 First, check whether the `timer_sleep()` is called with a positive number. If it is a negative, we return immediately. We then set `thread->wake_up_tick = timer_ticks() + ticks` to keep track of when the thread should wake up.
-Finally, we add the thread to the `sleeping_threads` list ordered by the sleep_ticks from least to greatest.
+Finally, we add the thread to the `sleeping_threads` list ordered by the sleep_ticks from least to greatest and then block the thread.
 
 In the `timer_interrupt()`, the time tick is incremented, and then we check through the `sleeping_threads` list for any threads that should wake up and schedule them.
 
@@ -33,7 +34,7 @@ In the `timer_interrupt()`, the time tick is incremented, and then we check thro
 We disable the interrupts before inserting the thread into the `sleeping_threads` list and then block the thread. This ensures that the insertion is atomic and race conditions are avoided when multiple threads call `timer_sleep()` simultaneously.
 
 ### Rationale
-We can use PintOS' list structure which comes with the feature of inserting an element into an ordered list. This can make implementing `sleeping_threads` easy. Disabling the interrupts is unavoidable to prevent racing so we limited it just the list insertion and thread blocking. Then `timer_interrupt` should still run pretty fast because we are only looking at an ordered list and stopping when the current time is less than the list element's `wake_up_tick`. This should at most be a linear complexity with respect to the number of threads.
+We can use PintOS' list structure which comes with the feature of inserting an element into an ordered list. This can make implementing `sleeping_threads` easy. Disabling the interrupts is unavoidable to prevent racing so we limited it just the list insertion and thread blocking. Then `timer_interrupt()` should still run pretty fast because we are only looking at an ordered list and stopping when the current time is less than the list element's `wake_up_tick`. This should at most be a linear complexity with respect to the number of threads. We don't want to use a lock because we don't wish to have any situations where we jump away from the thread during `timer_sleep()`
 
 # Task 2: Priority Scheduler
 Task 2 consists of implementing the priority scheduler and priority donation. Thus, we decided to divide into two sections: section 2a for the priority scheduler and section 2b for priority donation.
