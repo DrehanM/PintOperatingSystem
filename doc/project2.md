@@ -105,12 +105,8 @@ We need to modify the implementation of synchronization shared resources like se
 
 In order to give preference to higher priority threads in semaphores we just need to sort the list of waiting threads `waiters` everytime a thread calls sema_up(). This will ensure that when a thread holding the semaphore and releases it by calling sema_up(), the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase the list will be eventually sorted by sema_up().
 
-
-
 ### Synchronization
 The list of waiting threads `waiters` will be sorted inside the disabled interrupts section of sema_up(), thus it is atomic. This ensures that the priority of the threads do not change between sorting and unblocking the next thread. 
-
-
 
 ### Rationale
 
