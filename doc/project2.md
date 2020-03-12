@@ -188,4 +188,5 @@ switches to another thread, this member saves the thread’s stack pointer. No o
 the stack."
 
 ### 2
-When thread_exit is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
+When `thread_exit` is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
+This is necessary because `thread_exit` is called by the thread which is exiting. We cannot free the stack and TCB of this thread while it is running, so we need to wait for a new thread to be scheduled and start running before we can free the page of the old thread. 
