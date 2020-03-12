@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "interrupt.h": "c",
+        "syscall.h": "c",
+        "lib.h": "c",
+        "stdbool.h": "c",
+        "vaddr.h": "c",
+        "functional": "c",
+        "*.inc": "c",
+        "*.tcc": "c",
+        "string_view": "c"
+    }
+}

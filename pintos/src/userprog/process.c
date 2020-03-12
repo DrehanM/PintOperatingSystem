@@ -150,11 +150,13 @@ void get_argv_from_list(struct list *word_lst, char *argv[], size_t *argv_length
   word_t *w;
   struct list_elem *e;
   int i = 0;
-  for (e = list_begin(word_lst); e->next != NULL; e = e->next) {
+  for (e = list_begin(word_lst); e->next != NULL;) {
     w = list_entry(e, word_t, elem);
     argv[i] = w->word;
     argv_lengths[i] = w->length_word;
     i++;
+    e = e->next;
+    free(w);
   }
   argv[i] = NULL;
 }
