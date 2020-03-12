@@ -115,9 +115,9 @@ We will create a function `resource_priority_comparator` which compares two `lis
 bool resource_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
 ```
 
-When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its `priority_donation_list`.
+Called when `lock_address` is released. The following function will update a thread's `priority_donation_list` and it's priority using `thread_set_priority()`. Calls `thread_yield()` if the priority is decremented. 
 ```
-void decrement_priority(void *resource_address) {};
+void decrement_priority(void *lock_address) {};
 ```
 
 This function sets the priority of a thread to prioriy and adds a list element containing the `resource_address` and the `priority` value to the thread's `priority_donation_list`.
