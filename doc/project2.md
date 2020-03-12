@@ -49,6 +49,8 @@ bool priority_comparator (const struct list_elem *a, const struct list_elem *b, 
 ### Algorithms
 The majority of this aspect of priority scheduling is already implemented in the `list` library file and in `schedule` within `thread.c`. We will change `list_pop_front` to `list_max` in the `next_thread_to_run` function of `thread.c` so that when a new thread is chosen from the ready queue it chooses the one with highest priority. 
 
+If multiple threads have the same priority and are the highest priority threads then `list_max` will identify the whichever of these threads is closest to the front of `ready_list`. Consequently, to maintain round-robin scheduling among threads with equal priority we will add threads to the back of `ready_list` rather than the front. 
+
 ### Synchronization
 Synchronization is already handled by the thread scheduler, so this is not of concern.
 
