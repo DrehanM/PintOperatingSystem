@@ -116,9 +116,9 @@ We will create a function `resource_priority_comparator` which compares two `lis
 bool resource_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
 ```
 
-When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its `priority_donation_list`.
+Called when `lock_address` is released. The following function will update a thread's `priority_donation_list` and it's priority using `thread_set_priority()`. Calls `thread_yield()` if the priority is decremented. 
 ```
-void decrement_priority(void *resource_address) {};
+void decrement_priority(void *lock_address) {};
 ```
 
 This function sets the priority of a thread to prioriy and adds a list element containing the `resource_address` and the `priority` value to the thread's `priority_donation_list`.
@@ -138,7 +138,7 @@ When a thread calls `lock_acquire` there are two possibilities: it succesfully a
 We need to modify the implementation of synchronization shared resources like semaphores, locks, and condition variables so that they give preference to higher priority threads. 
 
 Semaphore:
-In order to give preference to higher priority threads in semaphores we just need to find the highest priority thread in the list of waiting threads `waiters` everytime a thread calls `sema_up()`. We can find the highest priority thread in `waiters` by calling `list_max` on `priority_donation_list` using the `priority_comparator`. This takes O(N) time where N is the numner of elements in the `waiters`. This will ensure that when a thread holding the semaphore and releases it by calling `sema_up()`, the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase sema_up() will find the highest priority thread everytime it is called.
+In order to give preference to higher priority threads in semaphores we just need to find the highest priority thread in the list of waiting threads `waiters` everytime a thread calls `sema_up()`. We can find the highest priority thread in `waiters` by calling `list_max` on `priority_donation_list` using the `priority_comparator`. This takes O(N) time where N is the numner of elements in the `waiters`. This will ensure that when a thread holding the semaphore and releases it by calling `sema_up()`, the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when `sema_down()` is called becuase `sema_up()` will find the highest priority thread everytime it is called.
 
 Lock:
 Since locks are implemented using a semaphore initialized to value one, if semaphores give preference to higher priority threads so will our lock. 
