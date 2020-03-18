@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.sol": "bat",
+        "istream": "c",
+        "locale": "c",
+        "*.inc": "c",
+        "inode.h": "c",
+        "debug.h": "c",
+        "file.h": "c"
+    }
+}
