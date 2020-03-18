@@ -119,6 +119,8 @@ struct thread
 
     struct list fd_map;
 
+	int64_t wake_up_tick; // the tick when the thread should wake up
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
