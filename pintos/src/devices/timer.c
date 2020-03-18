@@ -19,6 +19,8 @@
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
+static struct list sleeping_threads; // keeps track of threads that are currently sleeping
+
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -35,6 +37,7 @@ static void real_time_delay (int64_t num, int32_t denom);
 void
 timer_init (void)
 {
+  list_init(&sleeping_threads);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -84,16 +87,31 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+/* Sorting function for ordered list insertion */
+bool sort_ticks(struct list_elem* l1, struct list_elem* l2) {
+	struct thread* t1 = list_entry(l1, struct thread, elem);
+	struct thread* t2 = list_entry(l2, struct thread, elem);
+
+	return t1->wake_up_tick < t2->wake_up_tick;
+}
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks)
 {
-  int64_t start = timer_ticks ();
+	if (ticks <= 0) return; // return immediately if ticks is non-positive
+	int64_t start = timer_ticks ();
+	struct thread* cur_thread = thread_current();
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
-    thread_yield ();
+	cur_thread->wake_up_tick = start + ticks;
+
+	ASSERT(intr_get_level() == INTR_ON);
+
+	intr_disable();
+	list_insert_ordered(&sleeping_threads, &(cur_thread->elem), sort_ticks, NULL);
+	thread_block();
+	intr_enable();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +190,20 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  struct thread *t;
+
+  while (!list_empty(&sleeping_threads)) {
+	  /* while there are still threads sleeping,
+	  go through all the threads that have their times up,
+	  and pop them from the list */
+	  t = list_entry(list_front(&sleeping_threads), struct thread, elem);
+
+	  if (t->wake_up_tick > timer_ticks()) break; // if the current thread is too early to be woken, break
+
+	  list_pop_front(&sleeping_threads);
+	  thread_unblock(t);
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
