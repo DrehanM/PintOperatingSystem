@@ -30,7 +30,10 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name)
 {
+<<<<<<< HEAD
   printf("%s\n", file_name);
+=======
+>>>>>>> parent of 344c4a3... deleted utils and src from outer directory
   char *fn_copy;
   tid_t tid;
 
@@ -49,6 +52,7 @@ process_execute (const char *file_name)
   return tid;
 }
 
+<<<<<<< HEAD
 int load_arguments_to_stack(int argc, char *argv[], int argv_lengths[], void **if_esp) {
   // loads all of the arguments, aligns the stack, decrements if_esp
   uint32_t saved_addresses[argc];
@@ -110,6 +114,8 @@ uint8_t stack_alignment_calc(uint8_t stack_pointer, int argc) {
 
 
 
+=======
+>>>>>>> parent of 344c4a3... deleted utils and src from outer directory
 /* A thread function that loads a user process and starts it
    running. */
 static void
@@ -141,6 +147,12 @@ start_process (void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   
+<<<<<<< HEAD
+=======
+  int memory_allocated = 0; // variable for 
+
+  asm volatile ("movl %0, %%esp" : : "r" (if_.esp));
+>>>>>>> parent of 344c4a3... deleted utils and src from outer directory
 
   if_.esp -= 20;
 
