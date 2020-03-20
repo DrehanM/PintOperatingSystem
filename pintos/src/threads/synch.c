@@ -31,6 +31,8 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/thread.c"
+
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -113,9 +115,13 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters))
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
+  if (!list_empty (&sema->waiters)) {
+    struct list_elem *greatest_priority = list_max (&sema->waiters, thread_priority_comparator, NULL);
+    list_remove(greatest_priority);
+
+    thread_unblock (list_entry (greatest_priority,
                                 struct thread, elem));
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -196,9 +202,38 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  int old_level = intr_disable (); 
+  struct thread *t = thread_current();
+
+  if (!lock_try_acquire(lock)) { // cant aquire lock
+    t->blocking_resource = lock;
+    t->blocking_thread = lock->holder;
+
+    donate_priority(lock->holder, lock, t->priority);
+
+    intr_set_level (old_level);
+
+    // TODO: Make sure this interrupt logic checks out t->blocking_thread and t->blocking_resource after
+
+    while (1) {
+      old_level = intr_disable();
+      if (lock_try_acquire(lock)) {
+        t->blocking_resource = NULL;
+        t->blocking_thread = NULL;
+        intr_set_level (old_level);
+        return;
+      }
+      intr_set_level (old_level);
+      thread_yield();
+    }
+
+
+  } else {
+    intr_set_level (old_level);
+  }
 }
+
+
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
@@ -220,6 +255,8 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
+
+
 /* Releases LOCK, which must be owned by the current thread.
 
    An interrupt handler cannot acquire a lock, so it does not
@@ -231,8 +268,30 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  lock->holder = NULL;
+  int old_level = intr_disable (); 
+
+  decrement_priority(lock);
+  // Iterate through all of threads in semaphore list, change their blocking_thread to the released one
+
+  // call list_max on semaphore waiters
+  struct list *waiters = &lock->semaphore.waiters;
+  struct list_elem *greatest_priority = list_max (waiters, thread_priority_comparator, NULL);
+
+  if (greatest_priority != list_tail(waiters)) { // if none empty waiters, update their blocking_thread
+    struct thread *max_thread = list_entry (greatest_priority, struct thread, elem);
+
+    // iterate through waiters list, update each of their blocking_thread
+    for (struct list_elem *e= list_front(waiters); e != list_end(waiters); e = list_next(e)) {
+      struct thread *t = list_entry (e, struct thread, elem);
+      t->blocking_thread = max_thread;
+    }
+  }
+
+
   sema_up (&lock->semaphore);
+  lock->holder = NULL;
+
+  intr_set_level(old_level);
 }
 
 /* Returns true if the current thread holds LOCK, false
