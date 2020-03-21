@@ -72,6 +72,9 @@ sema_down (struct semaphore *sema)
       thread_block ();
     }
   sema->value--;
+  struct thread *t = thread_current();
+  t->blocking_resource = NULL;
+  t->blocking_thread = NULL;
   intr_set_level (old_level);
 }
 
@@ -113,15 +116,18 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+  struct thread *greatest_waiter = thread_current();
   if (!list_empty (&sema->waiters)) {
     struct list_elem *greatest_priority = list_max (&sema->waiters, thread_priority_comparator, NULL);
+    greatest_waiter = list_entry (greatest_priority, struct thread, elem);
     list_remove(greatest_priority);
-
-    thread_unblock (list_entry (greatest_priority,
-                                struct thread, elem));
+    thread_unblock (greatest_waiter);
   }
   sema->value++;
   intr_set_level (old_level);
+  if (thread_current()->priority < greatest_waiter->priority) {
+    thread_yield();
+  }
 }
 
 static void sema_test_helper (void *sema_);
@@ -206,32 +212,14 @@ lock_acquire (struct lock *lock)
   if (!lock_try_acquire(lock)) { // cant aquire lock
     t->blocking_resource = lock;
     t->blocking_thread = lock->holder;
-
     donate_priority(lock->holder, lock, t->priority);
-
     intr_set_level (old_level);
-
-    // TODO: Make sure this interrupt logic checks out t->blocking_thread and t->blocking_resource after
-
-    while (1) {
-      old_level = intr_disable();
-      if (lock_try_acquire(lock)) {
-        t->blocking_resource = NULL;
-        t->blocking_thread = NULL;
-        intr_set_level (old_level);
-        return;
-      }
-      intr_set_level (old_level);
-      thread_yield();
-    }
-
-
+    sema_down (&lock->semaphore);
+    lock->holder = thread_current(); 
   } else {
     intr_set_level (old_level);
   }
 }
-
-
 
 /* Tries to acquires LOCK and returns true if successful or false
    on failure.  The lock must not already be held by the current
@@ -267,10 +255,6 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   int old_level = intr_disable (); 
-
-  decrement_priority(lock);
-  // Iterate through all of threads in semaphore list, change their blocking_thread to the released one
-
   // call list_max on semaphore waiters
   struct list *waiters = &lock->semaphore.waiters;
   struct list_elem *greatest_priority = list_max (waiters, thread_priority_comparator, NULL);
@@ -284,11 +268,9 @@ lock_release (struct lock *lock)
       t->blocking_thread = max_thread;
     }
   }
-
-
   sema_up (&lock->semaphore);
   lock->holder = NULL;
-
+  decrement_priority(lock);
   intr_set_level(old_level);
 }
 

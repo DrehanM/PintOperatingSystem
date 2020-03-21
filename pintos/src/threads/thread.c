@@ -331,6 +331,7 @@ void
 thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -604,11 +605,11 @@ void decrement_priority(void *resource_address) {
         list_remove(e);
         if (p->priority == t->priority) { // update our priority
           if (list_empty(pd_lst)) { // set to base priority
-            t->priority = t->original_priority;
+            thread_set_priority(t->original_priority);
           } else { // set to next greatest priority
             struct list_elem *max_elem = list_max(pd_lst, priority_comparator, NULL);
             priority_t *max_priority = list_entry(max_elem, priority_t, elem);
-            t->priority = max_priority->priority;
+            thread_set_priority(max_priority->priority);
           } 
         }
         return;
@@ -638,7 +639,7 @@ void donate_priority(struct thread *lock_holder_thread, void *resource_address, 
 
   // otherwise add priorty to lock_holder_thread->priority_donation_list
   if (!updated_flag) {
-    priority_t *p;
+    priority_t *p = (priority_t *) malloc(sizeof(priority_t));
     p->priority = priority;
     p->resource_address = resource_address;
     list_push_back(blocked_pd, &p->elem);
