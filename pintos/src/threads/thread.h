@@ -26,6 +26,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+typedef struct priority {
+    int priority;
+    void *resource_address;
+    struct list_elem elem;
+} priority_t;
+
 /* A kernel thread or user process.
    Each thread structure is stored in its own 4 kB page.  The
    thread structure itself sits at the very bottom of the page
@@ -84,11 +90,17 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int original_priority;    /* Priority we revert to when priority_donation_list is empty */
+
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    int64_t wake_up_tick; // the tick when the thread should wake up
+    int64_t wake_up_tick; // the tick when the thread should wake up 
+
+    struct list priority_donation_list; 
+    struct thread *blocking_thread;
+    void *blocking_resource;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -134,5 +146,10 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void donate_priority(struct thread *lock_holder_thread, void *resource_address, int priority);
+void decrement_priority(void *resource_address);
+bool priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool thread_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
 
 #endif /* threads/thread.h */
