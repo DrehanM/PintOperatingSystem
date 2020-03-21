@@ -96,7 +96,7 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    int64_t wake_up_tick; // the tick when the thread should wake up
+    int64_t wake_up_tick; // the tick when the thread should wake up 
 
     struct list priority_donation_list; 
     struct thread *blocking_thread;
@@ -146,5 +146,10 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void donate_priority(struct thread *lock_holder_thread, void *resource_address, int priority);
+void decrement_priority(void *resource_address);
+bool priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool thread_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
 
 #endif /* threads/thread.h */

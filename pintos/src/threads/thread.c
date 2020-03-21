@@ -502,7 +502,6 @@ next_thread_to_run (void)
   }
 }
 
-
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
    At this function's invocation, we just switched from thread
@@ -597,24 +596,26 @@ void decrement_priority(void *resource_address) {
   // called from lock_release, interrupts are disabled
   struct thread *t = thread_current();
   struct list *pd_lst = &t->priority_donation_list;
-
-  // find priority in priority_donation_list
-  for (struct list_elem *e= list_front(pd_lst); e != list_end(pd_lst); e = list_next(e)) {
-    priority_t *p = list_entry(e, priority_t, elem);
-    if (resource_address == p->resource_address) {
-      list_remove(e);
-      if (p->priority == t->priority) { // update our priority
-        if (list_empty(pd_lst)) { // set to base priority
-          t->priority = t->original_priority;
-        } else { // set to next greatest priority
-          struct list_elem *max_elem = list_max(pd_lst, priority_comparator, NULL);
-          priority_t *max_priority = list_entry(max_elem, priority_t, elem);
-          t->priority = max_priority->priority;
-        } 
+  if (!list_empty (pd_lst)) {
+    // find priority in priority_donation_list
+    for (struct list_elem *e= list_front(pd_lst); e != list_end(pd_lst); e = list_next(e)) {
+      priority_t *p = list_entry(e, priority_t, elem);
+      if (resource_address == p->resource_address) {
+        list_remove(e);
+        if (p->priority == t->priority) { // update our priority
+          if (list_empty(pd_lst)) { // set to base priority
+            t->priority = t->original_priority;
+          } else { // set to next greatest priority
+            struct list_elem *max_elem = list_max(pd_lst, priority_comparator, NULL);
+            priority_t *max_priority = list_entry(max_elem, priority_t, elem);
+            t->priority = max_priority->priority;
+          } 
+        }
+        return;
       }
-      return;
     }
   }
+  return;
 }
 
 void donate_priority(struct thread *lock_holder_thread, void *resource_address, int priority) {
@@ -625,11 +626,13 @@ void donate_priority(struct thread *lock_holder_thread, void *resource_address, 
   bool updated_flag = false;
 
   struct thread *blocked_pd = &lock_holder_thread->priority_donation_list;
-  for (struct list_elem *e= list_front(blocked_pd); e != list_end(blocked_pd); e = list_next(e)) {
-    priority_t *p = list_entry(e, priority_t, elem);
-    if (resource_address == p->resource_address) {
-      p->priority = priority;
-      updated_flag = true;
+  if (!list_empty(blocked_pd)) {
+    for (struct list_elem *e= list_front(blocked_pd); e != list_end(blocked_pd); e = list_next(e)) {
+      priority_t *p = list_entry(e, priority_t, elem);
+      if (resource_address == p->resource_address) {
+        p->priority = priority;
+        updated_flag = true;
+      }
     }
   }
 
@@ -638,11 +641,8 @@ void donate_priority(struct thread *lock_holder_thread, void *resource_address, 
     priority_t *p;
     p->priority = priority;
     p->resource_address = resource_address;
-
-    struct list *p_list = &lock_holder_thread->priority_donation_list;
-    list_push_back(p_list, &p->elem);
+    list_push_back(blocked_pd, &p->elem);
   }
-  
 
   // update the threads effective priority
   if (priority > lock_holder_thread->priority) { // need to increment its priority
