@@ -90,7 +90,7 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
-    int original_priority;    /* Priority we revert to when priority_donation_list is empty */
+    int original_priority;             /* Priority we revert to when priority_donation_list is empty */
 
     struct list_elem allelem;           /* List element for all threads list. */
 
@@ -101,7 +101,8 @@ struct thread
     struct list priority_donation_list; 
     struct thread *blocking_thread;
     void *blocking_resource;
-
+    bool donated;
+    
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */

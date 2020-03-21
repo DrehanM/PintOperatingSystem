@@ -330,6 +330,14 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
+  // If you have a donation and you try to lower you priority it should only change your base priority not your effective priority. 
+  if (thread_current()->donated && new_priority < thread_current()->original_priority) {
+    thread_current()->original_priority = new_priority;
+    return;
+  }
+  if (thread_current ()->priority == thread_current ()->original_priority) {
+    thread_current ()->original_priority = new_priority;
+  } 
   thread_current ()->priority = new_priority;
   thread_yield();
 }
@@ -461,6 +469,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->original_priority = priority;
   list_init(&t->priority_donation_list);
+
+  // no donations initially
+  t->donated = false;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -605,6 +616,7 @@ void decrement_priority(void *resource_address) {
         list_remove(e);
         if (p->priority == t->priority) { // update our priority
           if (list_empty(pd_lst)) { // set to base priority
+            t->donated = false;
             thread_set_priority(t->original_priority);
           } else { // set to next greatest priority
             struct list_elem *max_elem = list_max(pd_lst, priority_comparator, NULL);
@@ -648,6 +660,7 @@ void donate_priority(struct thread *lock_holder_thread, void *resource_address, 
   // update the threads effective priority
   if (priority > lock_holder_thread->priority) { // need to increment its priority
     lock_holder_thread->priority = priority;
+    lock_holder_thread->donated = true;
   }
 
   // recursive donation
