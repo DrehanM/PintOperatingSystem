@@ -359,25 +359,6 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
     list_remove(max);
     return sema_up (&list_entry (max, struct semaphore_elem, elem)->semaphore);
   }
-  // struct list_elem *max = list_begin (&cond->waiters);
-  // if (max != list_end (&cond->waiters))
-  //   {
-  //     struct list_elem *e;
-  //     for (e = list_next (max); e != list_end (&cond->waiters); e = list_next (e))
-  //       if (cond_priority_comparator (max, e))
-  //         max = e;
-  //   }
-  // list_remove(max);
-  // return sema_up (&list_entry (max, struct semaphore_elem, elem)->semaphore);
-
-
-  // struct semaphore *curr;
-  // while (!list_empty (&cond->waiters))
-  //   curr = &list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore;
-  //   struct list thread = curr->waiters;
-
-  //   sema_up (&list_entry (list_pop_front (&cond->waiters),
-  //                         struct semaphore_elem, elem)->semaphore);
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
