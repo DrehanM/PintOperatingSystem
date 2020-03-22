@@ -9,7 +9,10 @@ Design Document for Project 2: Threads
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
 
+Project 2 Design Document
+=======
 # Task 1: Efficient Alarm Clock
+
 ### Data Structures and Functions
 ```
 /* threads/threads.h */
@@ -25,7 +28,7 @@ struct list sleeping_threads; // keeps track of threads that are currently sleep
 
 ### Algorithms
 First, check whether the `timer_sleep()` is called with a positive number. If it is a negative, we return immediately. We then set `thread->wake_up_tick = timer_ticks() + ticks` to keep track of when the thread should wake up.
-Finally, we add the thread to the `sleeping_threads` list ordered by the sleep_ticks from least to greatest.
+Finally, we add the thread to the `sleeping_threads` list ordered by the sleep_ticks from least to greatest and then block the thread.
 
 In the `timer_interrupt()`, the time tick is incremented, and then we check through the `sleeping_threads` list for any threads that should wake up and schedule them.
 
@@ -33,7 +36,7 @@ In the `timer_interrupt()`, the time tick is incremented, and then we check thro
 We disable the interrupts before inserting the thread into the `sleeping_threads` list and then block the thread. This ensures that the insertion is atomic and race conditions are avoided when multiple threads call `timer_sleep()` simultaneously.
 
 ### Rationale
-We can use PintOS' list structure which comes with the feature of inserting an element into an ordered list. This can make implementing `sleeping_threads` easy. Disabling the interrupts is unavoidable to prevent racing so we limited it just the list insertion and thread blocking. Then `timer_interrupt` should still run pretty fast because we are only looking at an ordered list and stopping when the current time is less than the list element's `wake_up_tick`. This should at most be a linear complexity with respect to the number of threads.
+We can use PintOS' list structure which comes with the feature of inserting an element into an ordered list. This can make implementing `sleeping_threads` easy. Disabling the interrupts is unavoidable to prevent racing so we limited it just the list insertion and thread blocking. Then `timer_interrupt()` should still run pretty fast because we are only looking at an ordered list and stopping when the current time is less than the list element's `wake_up_tick`. This should at most be a linear complexity with respect to the number of threads. We don't want to use a lock because we don't wish to have any situations where we jump away from the thread during `timer_sleep()`
 
 # Task 2: Priority Scheduler
 Task 2 consists of implementing the priority scheduler and priority donation. Thus, we decided to divide into two sections: section 2a for the priority scheduler and section 2b for priority donation.
@@ -47,6 +50,8 @@ bool priority_comparator (const struct list_elem *a, const struct list_elem *b, 
 ```
 ### Algorithms
 The majority of this aspect of priority scheduling is already implemented in the `list` library file and in `schedule` within `thread.c`. We will change `list_pop_front` to `list_max` in the `next_thread_to_run` function of `thread.c` so that when a new thread is chosen from the ready queue it chooses the one with highest priority. 
+
+If multiple threads have the same priority and are the highest priority threads then `list_max` will identify the whichever of these threads is closest to the front of `ready_list`. Consequently, to maintain round-robin scheduling among threads with equal priority we will add threads to the back of `ready_list` rather than the front. 
 
 ### Synchronization
 Synchronization is already handled by the thread scheduler, so this is not of concern.
@@ -115,9 +120,9 @@ We will create a function `resource_priority_comparator` which compares two `lis
 bool resource_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux)
 ```
 
-When a thread yields ownership of a shared resource (semaphore, lock, monitor) it might need to modify its priority. The following function will update a thread's priority and its `priority_donation_list`.
+Called when `lock_address` is released. The following function will update a thread's `priority_donation_list` and it's priority using `thread_set_priority()`. Calls `thread_yield()` if the priority is decremented. 
 ```
-void decrement_priority(void *resource_address) {};
+void decrement_priority(void *lock_address) {};
 ```
 
 This function sets the priority of a thread to prioriy and adds a list element containing the `resource_address` and the `priority` value to the thread's `priority_donation_list`.
@@ -137,7 +142,7 @@ When a thread calls `lock_acquire` there are two possibilities: it succesfully a
 We need to modify the implementation of synchronization shared resources like semaphores, locks, and condition variables so that they give preference to higher priority threads. 
 
 Semaphore:
-In order to give preference to higher priority threads in semaphores we just need to find the highest priority thread in the list of waiting threads `waiters` everytime a thread calls `sema_up()`. We can find the highest priority thread in `waiters` by calling `list_max` on `priority_donation_list` using the `priority_comparator`. This takes O(N) time where N is the numner of elements in the `waiters`. This will ensure that when a thread holding the semaphore and releases it by calling `sema_up()`, the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when sema_down() is called becuase sema_up() will find the highest priority thread everytime it is called.
+In order to give preference to higher priority threads in semaphores we just need to find the highest priority thread in the list of waiting threads `waiters` everytime a thread calls `sema_up()`. We can find the highest priority thread in `waiters` by calling `list_max` on `priority_donation_list` using the `priority_comparator`. This takes O(N) time where N is the numner of elements in the `waiters`. This will ensure that when a thread holding the semaphore and releases it by calling `sema_up()`, the next thread that runs will be the one with the highest priority. Threads can get added in any order to the `waiters` list when `sema_down()` is called becuase `sema_up()` will find the highest priority thread everytime it is called.
 
 Lock:
 Since locks are implemented using a semaphore initialized to value one, if semaphores give preference to higher priority threads so will our lock. 
@@ -175,14 +180,69 @@ By doing the same modification as in semaphores, we made sure to unblock the hig
 # Additional Questions
 
 ### 1
-from pg 11-12 of project spec:
-
-"Member of struct thread: uint8_t *stack
-
-Every thread has its own stack to keep track of its state. When the thread is running, the CPU’s
-stack pointer register tracks the top of the stack and this member is unused. But when the CPU
-switches to another thread, this member saves the thread’s stack pointer. No other members are needed to save the thread’s registers, because the other registers that must be saved are saved on
-the stack."
+When the thread is running the stack pointer exists in the CPU's stack pointer register. The stack pointer is saved in `uint8_t *stack` within the thread struct when the thread is not being run. When the CPU switches from one thread to another, the first thread's registers are stored on that thread's stack prior to the switch, so only this stack pointer needs to be stored by the thread struct. 
 
 ### 2
-When thread_exit is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
+When `thread_exit` is called, the thread's status is set to `THREAD_DYING`, and then the next thread is scheduled. In `thread_schedule_tail`, the next thread checks if the previous thread is dying, and if so frees the page. 
+This is necessary because `thread_exit` is called by the thread which is exiting. We cannot free the stack and TCB of this thread while it is running, so we need to wait for a new thread to be scheduled and start running before we can free the page of the old thread. 
+
+### 3
+`thread_tick` funs in an external interrupt context, which means that the instructions of the function are not traditionally scheduled on the CPU and occur from an external device interrupt. Therefore, the function cannot run within a user stack. `thread_tick` runs on the kernel stack.
+
+### 4
+Consider 4 threads T1, T2, T3, T4 where base priorities are T1 < T2 < T3 < T4. 
+- T1 runs and obtains a lock L1. 
+- T2 runs and obtains a lock L2. 
+- T4 runs and attempts to obtain lock L2. 
+- T2's priority is upgrade to T4's priority. 
+- T3 runs and attempts to obtain lock L1. 
+- T1's priority is upgrade to T3's priority. 
+- T2 runs and attempts to obtain lock L1. 
+- At this point, T2 and T3 are now waiting on the semaphore of L1 to be upped by T1. 
+
+If priority donation is working, then T2 will be unblocked before T3 since T4 has donated its priority to T2 while T2 holds lock L2. The opposite is true if sema_up only considers base priorities. We will write a test to ensure that T2 is unblocked before T3. 
+
+*Thread T(N) has priority N*
+
+Expected output:
+```
+# -*- perl -*-
+use strict;
+use warnings;
+use tests::tests;
+check_expected ([<<'EOF']);
+(priority-sema-effective) begin
+(priority-sema-effective) Thread T1 acquired lock L1 and downed semaphore on L1.
+(priority-sema-effective) Thread T2 acquired lock L2 and downed semaphore on L2.
+(priority-sema-effective) Thread T4 downed semaphore on L2.
+(priority-sema-effective) Thread T3 downed semaphore on L1.
+(priority-sema-effective) Thread T2 downed semaphore on L1.
+(priority-sema-effective) Thread T1 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T2 acquired lock L1.
+(priority-sema-effective) Thread T2 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T4 acquired lock L2.
+(priority-sema-effective) Thread T4 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T2 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T3 acquired lock L1.
+(priority-sema-effective) Thread T3 upped semaphore on L1 and released L1.
+EOF
+```
+
+Actual output:
+```
+# -*- perl -*-
+(priority-sema-effective) begin
+(priority-sema-effective) Thread T1 acquired lock L1 and downed semaphore on L1.
+(priority-sema-effective) Thread T2 acquired lock L2 and downed semaphore on L2.
+(priority-sema-effective) Thread T4 downed semaphore on L2.
+(priority-sema-effective) Thread T3 downed semaphore on L1.
+(priority-sema-effective) Thread T2 downed semaphore on L1.
+(priority-sema-effective) Thread T1 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T3 acquired lock L1.
+(priority-sema-effective) Thread T3 upped semaphore on L1 and released L1.
+(priority-sema-effective) Thread T2 acquired lock L1.
+(priority-sema-effective) Thread T2 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T4 acquired lock L2.
+(priority-sema-effective) Thread T4 upped semaphore on L2 and released L2.
+(priority-sema-effective) Thread T2 upped semaphore on L1 and released L1.
+```

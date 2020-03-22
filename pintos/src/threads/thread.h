@@ -26,30 +26,18 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-typedef struct wait_status {
-	// members to be used during WAIT syscalls
-	struct semaphore dead;			// parent calls sema down to wait for child to die, dead process calls sema up
-	int exit_status;			      //exit status of process upon termination.
-	tid_t tid;				          //process ID of the owner of this struct
-	int reference_count;			  //number of processes that point to this struct
-	struct lock lock;			      //lock to protect reference_count
-	
-	// members to be used during EXEC syscalls
-	struct semaphore done_loading;  // parent calls sema down to wait for child to load, child calls sema up
-	int load_error;                 // 0 == good, anything else is a load error. Isn't ready to be accessed until done_loading is 1
-	
-	struct list_elem elem;			//underlying list element
-} wait_status_t;
-
+typedef struct priority {
+    int priority;
+    void *resource_address;
+    struct list_elem elem;
+} priority_t;
 
 /* A kernel thread or user process.
-
    Each thread structure is stored in its own 4 kB page.  The
    thread structure itself sits at the very bottom of the page
    (at offset 0).  The rest of the page is reserved for the
    thread's kernel stack, which grows downward from the top of
    the page (at offset 4 kB).  Here's an illustration:
-
         4 kB +---------------------------------+
              |          kernel stack           |
              |                |                |
@@ -71,22 +59,18 @@ typedef struct wait_status {
              |               name              |
              |              status             |
         0 kB +---------------------------------+
-
    The upshot of this is twofold:
-
       1. First, `struct thread' must not be allowed to grow too
          big.  If it does, then there will not be enough room for
          the kernel stack.  Our base `struct thread' is only a
          few bytes in size.  It probably should stay well under 1
          kB.
-
       2. Second, kernel stacks must not be allowed to grow too
          large.  If a stack overflows, it will corrupt the thread
          state.  Thus, kernel functions should not allocate large
          structures or arrays as non-static local variables.  Use
          dynamic allocation with malloc() or palloc_get_page()
          instead.
-
    The first symptom of either of these problems will probably be
    an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
@@ -104,30 +88,25 @@ struct thread
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
-
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int original_priority;             /* Priority we revert to when priority_donation_list is empty */
+
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    int64_t wake_up_tick; // the tick when the thread should wake up 
+
+    struct list priority_donation_list; 
+    struct thread *blocking_thread;
+    void *blocking_resource;
+    bool donated;
     
-    /* Keeps track of the executable of this thread. */
-    struct file *executable;
-
-    struct lock fd_lock;
-
-    struct list fd_map;
-
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
-
-
-    struct wait_status *wait_status;    // Shared between the parent and this thread to communicate during WAIT calls.
-	  struct list children;		            // List of wait_status objects shared by this thread and its children.
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -154,9 +133,7 @@ struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
-void destroy_thread_fd(void);
 void thread_exit (void) NO_RETURN;
-void thread_exit_with_status(int status);
 void thread_yield (void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
@@ -170,5 +147,10 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+void donate_priority(struct thread *lock_holder_thread, void *resource_address, int priority);
+void decrement_priority(void *resource_address);
+bool priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool thread_priority_comparator (const struct list_elem *a, const struct list_elem *b, void *aux);
 
 #endif /* threads/thread.h */
