@@ -1,10 +1,5 @@
 Final Report for Project 2: Threads
 ===================================
-# Task 1: Scheduling Lab Write-Up
-
-Chris, Luke, and Dre! 
-
-# Task 2: Final Report Project 2
 
 ## Changes to the Design Document
 For task 1, the efficient alarm clock, we did not make any changes to the original design doc. The only function that was not mentioned explicity in the initial design document was the `sort_ticks` comparator which was used to keep the list of sleeping threads sorted by the time at which each thread needs to wake up.
