@@ -65,15 +65,23 @@ off_t inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offse
 off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size, off_t offset);
 
 
-// change to call get_cached_sector. Aquires and releases open_inodes_lock
+// change to call get_cached_sector. 
 struct inode *inode_create (block_sector_t sector, off_t length);
 
 // Aquires and releases open_inodes_lock to avoid race condition incrementing
 struct inode *inode_open (block_sector_t sector);
 
-// Aquires and releases open_inodes_lock to avoid race condition removing inode from open_inodes.
+// Acquires and releases open_inodes_lock to avoid race condition removing inode from open_inodes.
 void inode_close (struct inode *inode)
+
+// All these functions are changed to acquire and releases inode->l
+struct inode *inode_reopen (struct inode *inode)
+void inode_close (struct inode *inode)
+void inode_remove (struct inode *inode)
+void inode_deny_write (struct inode *inode)
+void inode_allow_write (struct inode *inode)
 ```
+
 
 ### Algorithms
 
@@ -94,7 +102,7 @@ We release the `buffer_cache_lock` and return `cached_sector`.
 
 
 ### Synchronization
-lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. 
+lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. We also use this lock when we are editing the inode struct members itself. 
 
 lock on open_inodes (`open_inodes_lock`): We have a lock on `open_inodes` to prevent race conditions when changing the `open_inodes`.
 
