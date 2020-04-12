@@ -146,10 +146,11 @@ bool inode_create (block_sector_t sector, off_t length);
 // Makes multiple calls to get_cached_sector to pull in indirect sectors
 block_sector_t byte_to_sector (const struct inode *inode, off_t pos);
 
-// Allocates another datablock to the file and adds to the indirect tree
+// Allocates another datablock to the file and adds to the indirect tree. If allocation fails it return -1.
 block_sector_t add_sector_to_file(struct inode *inode);
 
-// If offset > inode->inode_disk.length, we allocate sectors of all zero to fill the gap between offset and the eof
+// If offset > inode->inode_disk.length, we allocate sectors of all zero to fill the gap between offset and the eof. 
+// We will increase the lenght of the inode only after allocation for a new block succeds. If a call to add_sector_to_file fails we will not attempt to allocate any other sectors. This will leave the OS in a consistent state since the length of the inode is only increased after allocation succeeds. 
 off_t inode_write_at (struct inode *inode, void *buffer_, off_t size, off_t offset);
 
 // Edit to not do anything if we try reading beyond the file
