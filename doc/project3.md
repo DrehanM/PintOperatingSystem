@@ -57,11 +57,11 @@ void read_cached_sector(struct cached_sector *c, void *buffer)
 struct cached_sector *get_cached_sector(block_sector_t sector_idx);
 
 
-// Change to call get_cached_sector and read_cached_sector. Aquires lock of cached_sector while reading each sector.
+// change to call get_cached_sector and read_cached_sector. Acquires and releases inode->l.
 off_t inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset);
 
 
-// change to call get_cached_sector and write_cached_sector. Modifies dirty bit. Aquires lock of cached_sector while writing to each sector.
+// change to call get_cached_sector and write_cached_sector. Modifies dirty bit. Acquires and releases inode->l.
 off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size, off_t offset);
 
 
@@ -76,19 +76,21 @@ void inode_close (struct inode *inode)
 ```
 
 ### Algorithms
+
+#### Getting sectors from the cache
 `get_cached_sector(block_sector_t sector_idx)`: 
+
 We first acquire `buffer_cache_lock`.
 We iterate through our `buffer_cache` and check `cached_sector->sector_idx` for equality with `sector_idx`. 
-
 
 If we find a matching index, we then acquire `cached_sector->sector_lock`, push the `cached_sector` to the front of the cache, release `buffer_cache_lock`, and return `cached_sector`.
 We dont have to worry about `cached_sector` being evicted because eviction happens while `buffer_cache_lock` is acquired.
 
-If dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
+If we dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
 
-Our eviction strategy is as follows: assume we are trying to evict `struct cached_sector a`. We acquire `a->sector_lock` to ensure that no other thread is currently using this sector. We then check to see if the dirty bit is set. If it is we must write this sector back to memory using `block_write`. 
+Our eviction strategy is as follows: assume we are trying to evict `struct cached_sector evict`. We acquire `evict->sector_lock` to ensure that no other thread is currently using this sector. We then check to see if `evict->dirty` is set. If it is we must write `evict->data` back to memory using `block_write`. After this is done then we finally evict.
 
-After all this, we release the `buffer_cache_lock` and return `cached_sector`.
+We release the `buffer_cache_lock` and return `cached_sector`.
 
 
 ### Synchronization
@@ -96,10 +98,15 @@ lock on every inode (`inode->l`): We have a lock on every inode so that we can't
 
 lock on open_inodes (`open_inodes_lock`): We have a lock on `open_inodes` to prevent race conditions when changing the `open_inodes`.
 
-lock on buffer_cache (`buffer_cache_lock`): We have a lock on `buffer_cache` to prevent race conditions when changing `buffer_cace`.
+lock on buffer_cache (`buffer_cache_lock`): We have a lock on `buffer_cache` to prevent race conditions when changing `buffer_cache`. We acquire and release at the call to `get_cached_sector`.
 
-lock on each cached_sector (`cached_sector->sector_lock`): We have a lock for each cached_sector to ensure that a `cached_sector` is not evicted when we are currently reading or writing from it. 
+lock on each cached_sector (`cached_sector->sector_lock`): We have a lock for each cached_sector to ensure that a `cached_sector` is not evicted when we are currently reading or writing from it. We acquire the lock when we return the sector in `get_cached_sector`, and its up to the caller to release the lock when they are finished with the sector. The evicting process tries to acquire this lock when its about to evict. 
 
 ### Rationale
 
+Before you perform a read or write operation on a cached disk block you need to acquire the inode lock and the sector lock. This prevents concurrent read and writes to the same inode from happening and also solves the problem of evicting a cache block that is currently being written to. 
+Concurrent read and writes: before accessing the cache in the functions inode_read_at and inde_write_at the calling process must first acquire the inode lock, this prevents two processes from modifying an inode at the same time or reading from an inode while it is being modified. This issue is solved solely by the inode lock.
+However, the inode lock does not solve the issue of evicting a cached block that is currently being written too. Thus, we had to add the sector lock that must be acquired before writing to, reading from, or evicting a sector lock.
+
+Another design that we considered when evicting a block was just checking if the lock of the inode that holds this disk block is currently being held by another process. If this is the case then we would try to acquire the lock before evicting the block. Although this solves the problem it is a very inefficient solution. Take the following example:
 
