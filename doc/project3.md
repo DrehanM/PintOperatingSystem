@@ -271,11 +271,23 @@ Functions `filesys_create` and `filesys_open` include a `bool isdir` argument to
 
 Syscalls `readdir`, `isdir`, and `inumber` require traversing the list fd_map of the thread. We traverse this list until we find the thread_fd_elem that corresponds to target fd.
 
-### Rationale
-
 ### Synchronization
 
 All of the synchronization provided in Task 1 for the cache will apply to any and all accesses to inodes in the syscalls. Accesses to `thread->fd_map` and `thread->cwd` are all safe because only the owning thread will access these members (except for during `exec` when the parent sets the `child_thread->cwd` to a copy of the parent's cwd)
+
+### Rationale
+
+## Additional Question Section
+
+### Read-ahead
+Our cache only has temporal locality but it does not have spatial locality. Thus, to have spatial locality, when a data block is pulled from disk for a read or write operation, we would also pull the following data block from disk. Read-ahead is only useful when done asynchronously, thus if a process requests disk block 1, it should block until disk 1 is read in, but once that read is complete, control should return to the process immediately. The read-ahead request for disk block 2 can be done asynchronously by creating a new process that reads this block into the cache. 
+
+
+### Write-behind
+	For write-behind we need to periodically flush the dirty entries in the cache to disk. To do this, we can create a thread that periodically runs a function called ‘flush_cache’ that iterates through the cache entries and writes to disk those that are dirty. Of course, this function would acquire the buffer_cache_lock for synchronization purposes before writing anything to disk. The last line of this function would call`timer_sleep (int64_t ticks)` with a specified tick number to make the thread sleep for TICKS timer ticks. Since Windows flushes it cache every 8 seconds, we decided that this should be the same policy for our cache. Thus, since there are 100 ticks per second, this would mean the thread would sleep for 800 ticks after calling ‘flush_cache’.
+
+
+
 
 
 
