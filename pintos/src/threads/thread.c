@@ -307,7 +307,6 @@ destroy_thread_fd(void)
   struct list *l = &t->fd_map;
   thread_fd_t *w;
 
-  lock_acquire(&t->fd_lock);
   struct file *returned_file = NULL;
   while (!list_empty (l)) {
     struct list_elem *e = list_pop_front (l);
@@ -316,7 +315,6 @@ destroy_thread_fd(void)
     file_close(returned_file);
     free(w);
   }
-  lock_release(&t->fd_lock);
 }
 
 /* Deschedules the current thread and destroys it.  Never
@@ -516,7 +514,6 @@ init_thread (struct thread *t, const char *name, int priority)
 
   list_init (&t->children);
   list_init (&t->fd_map);
-  lock_init(&t->fd_lock);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -64,7 +64,6 @@ get_file_from_fd(int fd) {
   struct list *l = &t->fd_map;
   struct file *returned_file = NULL;
 
-  lock_acquire(&t->fd_lock);
   thread_fd_t *w;
   for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
     w = list_entry(e, thread_fd_t, elem);
@@ -73,7 +72,6 @@ get_file_from_fd(int fd) {
       break;
     }
   }
-  lock_release(&t->fd_lock);
   return returned_file;
 }
 
@@ -81,7 +79,6 @@ static void
 remove_file(int fd) {
   struct thread *t = thread_current();
   
-  lock_acquire(&t->fd_lock);
   struct list *l = &t->fd_map;
   thread_fd_t *w;
   for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
@@ -92,7 +89,6 @@ remove_file(int fd) {
       break;
     }
   }
-  lock_release(&t->fd_lock);
   return;
 }
 
@@ -134,14 +130,8 @@ open(const char * file) {
   fd->fd = fd_count;
   fd->f = f;
   struct thread *t = thread_current();
-
-  lock_acquire(&t->fd_lock);
-
   struct list *l = &thread_current()->fd_map;
   list_push_front(l, &fd->elem);
-
-  lock_release(&t->fd_lock);
-
   fd_count++;
   return fd_count-1;
 }

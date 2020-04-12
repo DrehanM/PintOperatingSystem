@@ -115,8 +115,6 @@ struct thread
     /* Keeps track of the executable of this thread. */
     struct file *executable;
 
-    struct lock fd_lock;
-
     struct list fd_map;
 
 #ifdef USERPROG
