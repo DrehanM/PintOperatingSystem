@@ -177,6 +177,12 @@ This part is operating at the disk level and we always work through the cache.
 We assume our cache is synchronized from part 1, therefore we don't have to do any syhnchronization as here by transitive property.
 
 ### Rationale
+We only need one level of doubly indirect because of the following. Our one doubly indirect points to 128 2^7 indirects. Each of these indirects points to 128 2^7 data blocks. Each of these data blocks is 512 2^9 bytes. Therefore this supports 2^23 byte files as specified in the spec. 
+
+We chose to always go through a doubly indirect instead of using direct blocks first to avoid edge cases and to avoid having to coalesce direct blocks after running out of space. Ideally in a real OS they would start with direct blocks so small files easily find there sector number without needing 2 extra disk calls.
+
+
+
 
 
 
