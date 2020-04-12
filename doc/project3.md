@@ -102,7 +102,7 @@ We release the `buffer_cache_lock` and return `cached_sector`.
 
 
 ### Synchronization
-lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. We also use this lock when we are editing the inode struct members itself. 
+lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. We also use this lock when we are editing the inode struct members itself. The reason we use the same lock is so that for example we don't close an inode while we are still performing operations to its data.
 
 lock on open_inodes (`open_inodes_lock`): We have a lock on `open_inodes` to prevent race conditions when changing the `open_inodes`.
 
@@ -112,9 +112,73 @@ lock on each cached_sector (`cached_sector->sector_lock`): We have a lock for ea
 
 ### Rationale
 
+We set the `buffer_cache` length to be 62 long. Since we use some extra bytes for metadata, this leaves us with 280 bytes extra, which means we can't allocate another sector in the cache.
+
 Before you perform a read or write operation on a cached disk block you need to acquire the inode lock and the sector lock. This prevents concurrent read and writes to the same inode from happening and also solves the problem of evicting a cache block that is currently being written to. 
 Concurrent read and writes: before accessing the cache in the functions inode_read_at and inde_write_at the calling process must first acquire the inode lock, this prevents two processes from modifying an inode at the same time or reading from an inode while it is being modified. This issue is solved solely by the inode lock.
 However, the inode lock does not solve the issue of evicting a cached block that is currently being written too. Thus, we had to add the sector lock that must be acquired before writing to, reading from, or evicting a sector lock.
 
 Another design that we considered when evicting a block was just checking if the lock of the inode that holds this disk block is currently being held by another process. If this is the case then we would try to acquire the lock before evicting the block. Although this solves the problem it is a very inefficient solution. 
+
+
+# Task 2: Extensible Files
+
+### Data Structures and Functions
+```c
+struct inode_disk { // size equal to BLOCK_SECTOR_SIZE
+    block_sector_t  indiect_ptr_idx;               /* Point to doubly indirect. */
+    off_t length;                     		   /* File size in bytes. */
+    unsigned magic;                    		   /* Magic number. */
+    uint32_t unused[125];              	   	   /* Not used, just to fill to BLOCK_SECTOR_SIZE */
+}
+
+struct indirect { // size equal to BLOCK_SECTOR_SIZE
+    block_sector_t[128] ptrs;                      /* Points to other sectors, could be either indirects or data blocks */
+}
+
+// Creates a doubly indirect sector. Then calls add_sector_to_file enough times to fullfill length. 
+bool inode_create (block_sector_t sector, off_t length);
+
+// Change to go through our indirect tree to find the correct block_sector.
+// Makes multiple calls to get_cached_sector to pull in indirect sectors
+block_sector_t byte_to_sector (const struct inode *inode, off_t pos);
+
+// Allocates another datablock to the file and adds to the indirect tree
+block_sector_t add_sector_to_file(struct inode *inode);
+
+// If offset > inode->inode_disk.length, we allocate sectors of all zero to fill the gap between offset and the eof
+off_t inode_write_at (struct inode *inode, void *buffer_, off_t size, off_t offset);
+
+// Edit to not do anything if we try reading beyond the file
+off_t inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset);
+
+// Change to free_map_release the whole indirect tree 
+void inode_close (struct inode *inode);
+```
+
+### Algorithms
+
+`add_sector_to_file`:
+Allocates one sector, adds it to the tree structure.
+Creates new indirects if the others are full.
+Calls `free_map_allocate` with a count of 1. 
+
+`inode_create`: Allocates the doubly indirect sector and assigns it to `disk_inode->indiect_ptr_idx`. 
+We figure out how many sectors we need to fill `length`. 
+We then call `add_sector_to_file` that many times.
+
+`byte_to_sector`: We find the sector number corresponding to the offset by traversing the tree structure based off the offset.
+For example, at 0 offset we will traverse the 0th index of the doubly indirect, and return the 0th index of the indirect for the sector number. At 512 offset we will traverse the 0th index of the doubly indirect, and return the 1st index of the indirect.
+
+`inode_write_at`: The change we make here is while inode->length < offset, we `add_sector_to_file` and fill the sector with zeros. Once we get to the offset we can write as before. If are writing past the end of our file, we call `add_sector_to_file` as many times as the remaining size of the write // 512 and continue.
+
+### Synchronization
+This part is operating at the disk level and we always work through the cache. 
+We assume our cache is synchronized from part 1, therefore we don't have to do any syhnchronization as here by transitive property.
+
+### Rationale
+
+
+
+
 
