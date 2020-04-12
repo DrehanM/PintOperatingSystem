@@ -72,14 +72,14 @@ struct inode *inode_create (block_sector_t sector, off_t length);
 struct inode *inode_open (block_sector_t sector);
 
 // Acquires and releases open_inodes_lock to avoid race condition removing inode from open_inodes.
-void inode_close (struct inode *inode)
+void inode_close (struct inode *inode);
 
 // All these functions are changed to acquire and releases inode->l
-struct inode *inode_reopen (struct inode *inode)
-void inode_close (struct inode *inode)
-void inode_remove (struct inode *inode)
-void inode_deny_write (struct inode *inode)
-void inode_allow_write (struct inode *inode)
+struct inode *inode_reopen (struct inode *inode);
+void inode_close (struct inode *inode);
+void inode_remove (struct inode *inode);
+void inode_deny_write (struct inode *inode);
+void inode_allow_write (struct inode *inode);
 ```
 
 
@@ -116,5 +116,5 @@ Before you perform a read or write operation on a cached disk block you need to 
 Concurrent read and writes: before accessing the cache in the functions inode_read_at and inde_write_at the calling process must first acquire the inode lock, this prevents two processes from modifying an inode at the same time or reading from an inode while it is being modified. This issue is solved solely by the inode lock.
 However, the inode lock does not solve the issue of evicting a cached block that is currently being written too. Thus, we had to add the sector lock that must be acquired before writing to, reading from, or evicting a sector lock.
 
-Another design that we considered when evicting a block was just checking if the lock of the inode that holds this disk block is currently being held by another process. If this is the case then we would try to acquire the lock before evicting the block. Although this solves the problem it is a very inefficient solution. Take the following example:
+Another design that we considered when evicting a block was just checking if the lock of the inode that holds this disk block is currently being held by another process. If this is the case then we would try to acquire the lock before evicting the block. Although this solves the problem it is a very inefficient solution. 
 
