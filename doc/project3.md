@@ -66,7 +66,7 @@ off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size, off_
 
 
 // change to call get_cached_sector. Aquires and releases open_inodes_lock
-struct inode *inode_open (block_sector_t sector);
+struct inode *inode_create (block_sector_t sector, off_t length);
 
 // Aquires and releases open_inodes_lock to avoid race condition incrementing
 struct inode *inode_open (block_sector_t sector);
