@@ -234,11 +234,13 @@ static int open(const char * file);
 // Else call dir_close(thread_fd_elem->d)
 static void close(int fd);
 
-// Look up fd map and get corresponding thread_fd_elem for fd. Verify that fd points to a directory by checking if the thread_fd_elem->d is not NULL by traversing fd_map.
+// Look up fd map and get corresponding thread_fd_elem for fd. 
+//Verify that fd points to a directory by checking if the thread_fd_elem->d is not NULL by traversing fd_map.
 // Return dir_readdir(thread_fd_elem->d, name)
 bool readdir (int fd, char *name);
 
-// Look up fd map and get corresponding thread_fd_elem for fd. Return true if fd points to a directory by checking if the thread_fd_elem->d is not NULL, false otherwise
+// Look up fd map and get corresponding thread_fd_elem for fd. 
+//Return true if fd points to a directory by checking if the thread_fd_elem->d is not NULL, false otherwise
 bool isdir (int fd);
 
 // Look up fd map and get corresponding thread_fd_elem for fd. 
