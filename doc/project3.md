@@ -80,6 +80,9 @@ void inode_close (struct inode *inode);
 void inode_remove (struct inode *inode);
 void inode_deny_write (struct inode *inode);
 void inode_allow_write (struct inode *inode);
+
+// We also want to write all the dirty cached_sector to disk when in this function
+void filesys_done (void);
 ```
 
 
