@@ -21,7 +21,6 @@ struct lock open_inodes_lock;
 
 struct cached_sector {
 	block_sector_t sector_idx; // check against when we go through the cache
-	block_sector_t inode_idx; // where is the corresponding inode located in memory? If this sector is an inode, then it’s exactly the same as sector_idx
 	list_elm elem; 
 	bool dirty; 
 	struct lock sector_lock; // acquire if currently reading/writing to this sector
@@ -50,7 +49,11 @@ void write_cached_sector(struct cached_sector *c, void *buffer)
 void read_cached_sector(struct cached_sector *c, void *buffer)
 
 
-// Gets the cached_sector from buffer_cache. If sector_idx isnt present, then we evict the last sector and pull in sector_idx from memory. During eviction, we write back to memory using block_write if the dirty bit is true. Aquires the sectors lock and returns a pointer to the sector. Callers of this function must release sectors lock after done using. 
+// Gets the cached_sector from buffer_cache. 
+// If sector_idx isnt present, then we evict the last sector and pull in sector_idx from memory. 
+// During eviction, we write back to memory using block_write if the dirty bit is true. 
+// Aquires the sectors lock and returns a pointer to the sector. 
+// Callers of this function must release sectors lock after done using. 
 struct cached_sector *get_cached_sector(block_sector_t sector_idx);
 
 
@@ -74,11 +77,19 @@ void inode_close (struct inode *inode)
 
 ### Algorithms
 `get_cached_sector(block_sector_t sector_idx)`: 
-When we look for a `sector_idx` in our cache, we iterate through our `buffer_cache` and check `cached_sector->sector_idx` for equality. If we find a matching index. 
+We first acquire `buffer_cache_lock`.
+We iterate through our `buffer_cache` and check `cached_sector->sector_idx` for equality with `sector_idx`. 
 
-If dont find a matching index, we have to pull in the sector from disk. If there is space in the cache, then we can just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
 
-Our eviction strategy is as follows: assume we are trying to evict `struct cached_sector a`. We first try to aquire `a->sector_lock`. 
+If we find a matching index, we then acquire `cached_sector->sector_lock`, push the `cached_sector` to the front of the cache, release `buffer_cache_lock`, and return `cached_sector`.
+We dont have to worry about `cached_sector` being evicted because eviction happens while `buffer_cache_lock` is acquired.
+
+If dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
+
+Our eviction strategy is as follows: assume we are trying to evict `struct cached_sector a`. We acquire `a->sector_lock` to ensure that no other thread is currently using this sector. We then check to see if the dirty bit is set. If it is we must write this sector back to memory using `block_write`. 
+
+After all this, we release the `buffer_cache_lock` and return `cached_sector`.
+
 
 ### Synchronization
 lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. 
