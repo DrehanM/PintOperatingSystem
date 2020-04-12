@@ -185,6 +185,97 @@ We only need one level of doubly indirect because of the following. Our one doub
 We chose to always go through a doubly indirect instead of using direct blocks first to avoid edge cases and to avoid having to coalesce direct blocks after running out of space. Ideally in a real OS they would start with direct blocks so small files easily find there sector number without needing 2 extra disk calls.
 
 
+## Task 3: Subdirectories
+
+### Data Structures and Functions
+
+```C
+struct thread {
+    ...
+    char *cwd; /* This thread's current working directory */
+    ...
+}
+
+/* Abstraction of fd map list for the thread */
+typedef struct thread_fd {
+    int fd;
+    struct file *f;  //valid if fd is a non-dir file. NULL if fd points to a directory
+    struct dir *d;   //valid if fd is a directory. NULL if fd points to a file
+    struct list_elem elem;
+} thread_fd_t;
+
+// Start from root or cwd (root if preceded by "/")
+// Iteratively read file path part and verify if part exists using get_next_part() and dir_lookup()
+//Return true if fp is valid, false otherwise
+bool verify_filepath(const char *fp);
+
+// Calls dir_create in place of inode_create if isdir == 1
+// All calls to this function will be changed appropriately
+bool filesys_create (const char *name, off_t initial_size, bool isdir);
+
+// Invoke verify_filepath(dir)
+// Change cwd to dir if absolute path, else change cwd to concat of old cwd and dir
+bool chdir (const char *dir);
+
+// Split dir on the last /
+// Verify that the filepath preceding the last part exists.
+// Verify that the entire filepath does not exist
+// Call filesys_create(<dir without last part>, DEFAULT_DIR_SIZE, 1)
+bool mkdir (const char *dir);
+
+// Invoke verify_filepath(file)
+// Lookup dir_entry in cwd or in enclosing directory if file is absolute path
+// Call filesys_open(dir_entry->inode, dir_entry->inode->isdir)
+// Create a corresponding thread_fd_elem and add to thread->fd_map and return a fd int
+static int open(const char * file);
+
+// Look up fd map and get corresponding thread_fd_elem for fd. 
+// Call file_close(thread_fd_elem->f) if thread_fd_elem->f not null
+// Else call dir_close(thread_fd_elem->d)
+static void close(int fd);
+
+// Look up fd map and get corresponding thread_fd_elem for fd. Verify that fd points to a directory by checking if the thread_fd_elem->d is not NULL by traversing fd_map.
+// Return dir_readdir(thread_fd_elem->d, name)
+bool readdir (int fd, char *name);
+
+// Look up fd map and get corresponding thread_fd_elem for fd. Return true if fd points to a directory by checking if the thread_fd_elem->d is not NULL, false otherwise
+bool isdir (int fd);
+
+// Look up fd map and get corresponding thread_fd_elem for fd. 
+// If thread_fd_elem->f not null, return thread_fd_elem->f->inode->sector
+// Else return thread_fd_elem->d->inode->sector
+int inumber (int fd);
+```
+
+
+### Directory Content Structure
+
+We will store (filename, inode sector number) mappings in a file (divided into sectors of course). This way, directories are treated as files. An example format of directory contents would follow something like (filename … inode_number … in_use\n):
+  - “ foo1 … 12 … 1\nbar … 19 … 1\nfile3 … 89 … 0\n”...
+
+This file structure can be easily marshalled into the `struct dir_entry`. `dir_create` handles properly formatting the contents into a file (with appropriate number of sectors)
+To enumerate parent inode mapping (“..”) and handle for this dir’s inode (“.”) we add the following to the beginning of the file:
+- “. … [this dir’s inode number] … 1\n .. … [parent dir’s inode number] … 1\n”
+
+Additionally, the .. entry of root points to root's inode number.
+
+### Algorithms
+
+`verify_filepath(const char *fp)` takes in a filepath and checks if it exists in the current working directory or under root if preceded by a /. We will iteratively build a string tracking a parent directory of checked parts so far. We call get_next_part() on the file path and use dir_lookup(tracked parent dir, next part) to verify if the path exists in the traversal so far. Return false if any call to dir_lookup returns false. True otherwise.
+
+Functions `filesys_create`, `filesys_open`, `filesys_remove` will search from root or cwd depending on if the passed in path is preceded with a slash.
+
+Functions `filesys_create` and `filesys_open` include a `bool isdir` argument to convey to handle the target file object as a directory or normal file. Calls to `*_create` will reflect the inode type.
+
+Syscalls `readdir`, `isdir`, and `inumber` require traversing the list fd_map of the thread. We traverse this list until we find the thread_fd_elem that corresponds to target fd.
+
+### Rationale
+
+### Synchronization
+
+All of the synchronization provided in Task 1 for the cache will apply to any and all accesses to inodes in the syscalls. Accesses to `thread->fd_map` and `thread->cwd` are all safe because only the owning thread will access these members (except for during `exec` when the parent sets the `child_thread->cwd` to a copy of the parent's cwd)
+
+
 
 
 
