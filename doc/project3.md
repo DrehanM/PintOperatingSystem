@@ -197,6 +197,15 @@ struct thread {
     ...
 }
 
+// Set cwd via malloc calls. cwd = "/" for the first thread on startup.
+// All subsequent threads set cwd as follows in thread_create
+tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) {
+	...
+	t->cwd = malloc(sizeof(thread_current()->cwd))
+	strlcpy(t->cwd, thread_current()->cwd, sizeof(thread_current()->cwd))
+	...
+}
+
 /* Abstraction of fd map list for the thread */
 typedef struct thread_fd {
     int fd;
@@ -277,7 +286,7 @@ Syscalls `readdir`, `isdir`, and `inumber` require traversing the list fd_map of
 
 ### Synchronization
 
-All of the synchronization provided in Task 1 for the cache will apply to any and all accesses to inodes in the syscalls. Accesses to `thread->fd_map` and `thread->cwd` are all safe because only the owning thread will access these members (except for during `exec` when the parent sets the `child_thread->cwd` to a copy of the parent's cwd)
+All of the synchronization provided in Task 1 for the cache will apply to any and all accesses to inodes in the syscalls. Accesses to `thread->fd_map` and `thread->cwd` are all safe because only the owning thread will access these members (except for during `exec` when the parent sets the `child_thread->cwd` to a copy of the parent's cwd, already serialized by scheduling the child after its members have been set.)
 
 ### Rationale
 
