@@ -139,7 +139,7 @@ struct indirect { // size equal to BLOCK_SECTOR_SIZE
     block_sector_t[128] ptrs;                      /* Points to other sectors, could be either indirects or data blocks */
 }
 
-// Creates a doubly indirect sector. Then calls add_sector_to_file enough times to fullfill length. 
+// Creates a doubly indirect sector. Then calls add_sector_to_file enough times to fulfill length. 
 bool inode_create (block_sector_t sector, off_t length);
 
 // Change to go through our indirect tree to find the correct block_sector.
@@ -183,7 +183,7 @@ We assume our cache is synchronized from part 1, therefore we don't have to do a
 ### Rationale
 We only need one level of doubly indirect because of the following. Our one doubly indirect points to 128 2^7 indirects. Each of these indirects points to 128 2^7 data blocks. Each of these data blocks is 512 2^9 bytes. Therefore this supports 2^23 byte files as specified in the spec. 
 
-We chose to always go through a doubly indirect instead of using direct blocks first to avoid edge cases and to avoid having to coalesce direct blocks after running out of space. Ideally in a real OS they would start with direct blocks so small files easily find there sector number without needing 2 extra disk calls.
+We chose to always go through a doubly indirect instead of using direct blocks first to avoid edge cases and to avoid having to coalesce direct blocks after running out of space. Ideally in a real OS they would start with direct blocks so small files easily find their sector number without needing 2 extra disk calls.
 
 
 ## Task 3: Subdirectories
@@ -209,6 +209,9 @@ typedef struct thread_fd {
 // Iteratively read file path part and verify if part exists using get_next_part() and dir_lookup()
 //Return true if fp is valid, false otherwise
 bool verify_filepath(const char *fp);
+
+// Extract part of a file name as described in proj3 spec. Used by verify_filepath.
+static int get_next_part (char part[NAME_MAX + 1], const char **srcp);
 
 // Calls dir_create in place of inode_create if isdir == 1
 // All calls to this function will be changed appropriately
@@ -277,6 +280,8 @@ Syscalls `readdir`, `isdir`, and `inumber` require traversing the list fd_map of
 All of the synchronization provided in Task 1 for the cache will apply to any and all accesses to inodes in the syscalls. Accesses to `thread->fd_map` and `thread->cwd` are all safe because only the owning thread will access these members (except for during `exec` when the parent sets the `child_thread->cwd` to a copy of the parent's cwd)
 
 ### Rationale
+
+The thread_fd_t struct is modified so that it can accommodate either an open file or an open directory. This allows a thread's fd_map to contain all open files and directories rather than storying them in separate lists while retaining a very simple way of identifying an element of the list as belonging to either a directory or a regular file. 
 
 ## Additional Question Section
 
