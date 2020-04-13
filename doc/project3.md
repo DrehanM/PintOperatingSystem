@@ -5,7 +5,7 @@ Design Document for Project 3: File Systems
 
 * Luke Dai <luke.dai@berkeley.edu>
 * Christopher DeVore <chrisdevore@berkeley.edu>
-* Dre Maharachi <dre@berkeley.edu>
+* Dre Mahaarachchi <dre@berkeley.edu>
 * Benjamin Ulrich <udotneb@berkeley.edu>
 * Diego Uribe <diego.uribe@berkeley.edu>
 
@@ -281,7 +281,7 @@ All of the synchronization provided in Task 1 for the cache will apply to any an
 
 ### Rationale
 
-The thread_fd_t struct is modified so that it can accommodate either an open file or an open directory. This allows a thread's fd_map to contain all open files and directories rather than storying them in separate lists while retaining a very simple way of identifying an element of the list as belonging to either a directory or a regular file. 
+The thread_fd_t struct is modified so that it can accommodate either an open file or an open directory. This allows a thread's fd_map to contain all open files and directories rather than storying them in separate lists while retaining a very simple way of identifying an element of the list as belonging to either a directory or a regular file. By similar logic, adding the isdir argument to the aforementioned functions also serves as a quick way to change function behavior between accomodating a file and a directory. Finally, the `dir_entry` struct format lends itself to the directory contents structure enumerated above, as the fields can be marshalled to and from the directory file easily.
 
 ## Additional Question Section
 
