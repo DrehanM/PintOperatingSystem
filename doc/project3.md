@@ -97,7 +97,7 @@ We iterate through our `buffer_cache` and check `cached_sector->sector_idx` for 
 If we find a matching index, we then acquire `cached_sector->sector_lock`, push the `cached_sector` to the front of the cache, release `buffer_cache_lock`, and return `cached_sector`.
 We dont have to worry about `cached_sector` being evicted because eviction happens while `buffer_cache_lock` is acquired.
 
-If we dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
+Else if we dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
 
 Our eviction strategy is as follows: assume we are trying to evict `struct cached_sector evict`. We acquire `evict->sector_lock` to ensure that no other thread is currently using this sector. We then check to see if `evict->dirty` is set. If it is we must write `evict->data` back to memory using `block_write`. After this is done then we finally evict.
 
@@ -105,7 +105,11 @@ We release the `buffer_cache_lock` and return `cached_sector`.
 
 
 ### Synchronization
-lock on every inode (`inode->l`): We have a lock on every inode so that we can't be reading and writing to an inode at the same time. We aquire the lock at the beginning of `inode_read_at` and `inode_write_at` and release the lock at the end of those functions. We also use this lock when we are editing the inode struct members itself. The reason we use the same lock is so that for example we don't close an inode while we are still performing operations to its data.
+lock on inode (`inode->l`): We use this lock when we are editing the inode struct members in functions: 
+`void inode_close (struct inode *inode);`
+`void inode_remove (struct inode *inode);`
+`void inode_deny_write (struct inode *inode);`
+`void inode_allow_write (struct inode *inode);`
 
 lock on open_inodes (`open_inodes_lock`): We have a lock on `open_inodes` to prevent race conditions when changing the `open_inodes`.
 
@@ -117,12 +121,9 @@ lock on each cached_sector (`cached_sector->sector_lock`): We have a lock for ea
 
 We set the `buffer_cache` length to be 62 long. Since we use some extra bytes for metadata, this leaves us with 280 bytes extra, which means we can't allocate another sector in the cache.
 
-Before you perform a read or write operation on a cached disk block you need to acquire the inode lock and the sector lock. This prevents concurrent read and writes to the same inode from happening and also solves the problem of evicting a cache block that is currently being written to. 
-Concurrent read and writes: before accessing the cache in the functions inode_read_at and inde_write_at the calling process must first acquire the inode lock, this prevents two processes from modifying an inode at the same time or reading from an inode while it is being modified. This issue is solved solely by the inode lock.
-However, the inode lock does not solve the issue of evicting a cached block that is currently being written too. Thus, we had to add the sector lock that must be acquired before writing to, reading from, or evicting a sector lock.
+Before you perform a read or write operation on a cached disk block you need to acquire the sector lock. This prevents concurrent read and writes to the same sector from happening and also solves the problem of evicting a cache block that is currently being written to. 
 
-Another design that we considered when evicting a block was just checking if the lock of the inode that holds this disk block is currently being held by another process. If this is the case then we would try to acquire the lock before evicting the block. Although this solves the problem it is a very inefficient solution. 
-
+We thought about whether using `buffer_cache_lock` was wrong, but thought that this still allows concurrent writes because the actual writing and reading is the meat of the latency, not iterating through the 62 sectors and returning a pointer. 
 
 # Task 2: Extensible Files
 
@@ -174,9 +175,11 @@ We then call `add_sector_to_file` that many times.
 `byte_to_sector`: We find the sector number corresponding to the offset by traversing the tree structure based off the offset.
 For example, at 0 offset we will traverse the 0th index of the doubly indirect, and return the 0th index of the indirect for the sector number. At 512 offset we will traverse the 0th index of the doubly indirect, and return the 1st index of the indirect.
 
-`inode_write_at`: The change we make here is while inode->length < offset, we `add_sector_to_file` and fill the sector with zeros. Once we get to the offset we can write as before. If are writing past the end of our file, we call `add_sector_to_file` as many times as the remaining size of the write // 512 and continue.
+`inode_write_at`: We first acquire `inode->l`. We then check inode->length < offset + size,  and call `add_sector_to_file` and fill the sector with zeros. Once we get to the offset we release `inode->l` write as before. If are writing past the end of our file, we call `add_sector_to_file` as many times as the remaining size of the write // 512 and continue.
 
 ### Synchronization
+In `inode_write_at`, our use of the lock `inode->l` solves the problem of two processes appending sectors to a file at the same time. This still allows multiple processes to write to different disk sectors of the same file, it just ensures that `add_sector_to_file` isn't called concurrently, since this would cause our indirect tree to be wonky. 
+
 This part is operating at the disk level and we always work through the cache. 
 We assume our cache is synchronized from part 1, therefore we don't have to do any syhnchronization as here by transitive property.
 
