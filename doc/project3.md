@@ -19,6 +19,8 @@ struct lock buffer_cache_lock;
 static struct list open_inodes;
 struct lock open_inodes_lock;
 
+struct lock palloc_lock;
+
 struct cached_sector {
 	block_sector_t sector_idx; // check against when we go through the cache
 	list_elm elem; 
@@ -30,7 +32,7 @@ struct cached_sector {
 struct inode // 
   {
     struct list_elem elem;              /* Element in inode list. */
-    struct lock l; 			/* Acquire before reading or writing to any disk block on this inode, release after */ 
+    struct lock l; 			/* Acquire while changing inode  */ elements
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     int removed;                        /* True if deleted, false otherwise. */
@@ -57,11 +59,11 @@ void read_cached_sector(struct cached_sector *c, void *buffer)
 struct cached_sector *get_cached_sector(block_sector_t sector_idx);
 
 
-// change to call get_cached_sector and read_cached_sector. Acquires and releases inode->l.
+// change to call get_cached_sector and read_cached_sector. 
 off_t inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset);
 
 
-// change to call get_cached_sector and write_cached_sector. Modifies dirty bit. Acquires and releases inode->l.
+// change to call get_cached_sector and write_cached_sector. Modifies dirty bit. 
 off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size, off_t offset);
 
 
@@ -94,8 +96,7 @@ void filesys_done (void);
 We first acquire `buffer_cache_lock`.
 We iterate through our `buffer_cache` and check `cached_sector->sector_idx` for equality with `sector_idx`. 
 
-If we find a matching index, we then acquire `cached_sector->sector_lock`, push the `cached_sector` to the front of the cache, release `buffer_cache_lock`, and return `cached_sector`.
-We dont have to worry about `cached_sector` being evicted because eviction happens while `buffer_cache_lock` is acquired.
+If we find a matching index, we release `buffer_cache_lock` and acquire `cached_sector->sector_lock`. Once we acquire the lock, we need to check to make sure that `cached_sector->sector` hasn't changed (which would mean that the sector got evicted). If it did change, we need to evict a block and pull in the sector. If it hasn't changed, we push the `cached_sector` to the front of the cache, and return `cached_sector`.
 
 Else if we dont find a matching index, we have to pull in the sector from disk, make it into a `struct cached_sector`, and acquire `cached_sector->sector_lock`. If there is space in the cache, we then just push to the front of our `buffer_cache`. If there isn't, then we have to evict from the back of `buffer_cache` and push our new sector to the front. 
 
@@ -116,6 +117,8 @@ lock on open_inodes (`open_inodes_lock`): We have a lock on `open_inodes` to pre
 lock on buffer_cache (`buffer_cache_lock`): We have a lock on `buffer_cache` to prevent race conditions when changing `buffer_cache`. We acquire and release at the call to `get_cached_sector`.
 
 lock on each cached_sector (`cached_sector->sector_lock`): We have a lock for each cached_sector to ensure that a `cached_sector` is not evicted when we are currently reading or writing from it. We acquire the lock when we return the sector in `get_cached_sector`, and its up to the caller to release the lock when they are finished with the sector. The evicting process tries to acquire this lock when its about to evict. 
+
+global lock on all palloc.c functions. 
 
 ### Rationale
 
