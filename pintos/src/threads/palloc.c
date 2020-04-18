@@ -40,6 +40,8 @@ static void init_pool (struct pool *, void *base, size_t page_cnt,
                        const char *name);
 static bool page_from_pool (const struct pool *, void *page);
 
+static struct lock palloc_lock;
+
 /* Initializes the page allocator.  At most USER_PAGE_LIMIT
    pages are put into the user pool. */
 void
@@ -54,6 +56,8 @@ palloc_init (size_t user_page_limit)
   if (user_pages > user_page_limit)
     user_pages = user_page_limit;
   kernel_pages = free_pages - user_pages;
+
+  lock_init(&palloc_lock);
 
   /* Give half of memory to kernel, half to user. */
   init_pool (&kernel_pool, free_start, kernel_pages, "kernel pool");
@@ -70,21 +74,25 @@ palloc_init (size_t user_page_limit)
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
 {
+  lock_acquire(&palloc_lock);
   struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
   void *pages;
   size_t page_idx;
 
-  if (page_cnt == 0)
+  if (page_cnt == 0) {
+    lock_release(&palloc_lock);
     return NULL;
+  }
 
   lock_acquire (&pool->lock);
   page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
   lock_release (&pool->lock);
 
-  if (page_idx != BITMAP_ERROR)
+  if (page_idx != BITMAP_ERROR) {
     pages = pool->base + PGSIZE * page_idx;
-  else
+  } else {
     pages = NULL;
+  }
 
   if (pages != NULL)
     {
@@ -93,10 +101,13 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt)
     }
   else
     {
-      if (flags & PAL_ASSERT)
+      if (flags & PAL_ASSERT) {
         PANIC ("palloc_get: out of pages");
+        lock_release(&palloc_lock);
+      }
     }
 
+  lock_release(&palloc_lock);
   return pages;
 }
 
@@ -117,19 +128,25 @@ palloc_get_page (enum palloc_flags flags)
 void
 palloc_free_multiple (void *pages, size_t page_cnt)
 {
+  lock_acquire(&palloc_lock);
+
   struct pool *pool;
   size_t page_idx;
 
   ASSERT (pg_ofs (pages) == 0);
-  if (pages == NULL || page_cnt == 0)
+  if (pages == NULL || page_cnt == 0) {
+    lock_release(&palloc_lock);
     return;
+  }
 
-  if (page_from_pool (&kernel_pool, pages))
+  if (page_from_pool (&kernel_pool, pages)) {
     pool = &kernel_pool;
-  else if (page_from_pool (&user_pool, pages))
+  } else if (page_from_pool (&user_pool, pages)) {
     pool = &user_pool;
-  else
+  } else {
+    lock_release(&palloc_lock);
     NOT_REACHED ();
+  }
 
   page_idx = pg_no (pages) - pg_no (pool->base);
 
@@ -139,6 +156,7 @@ palloc_free_multiple (void *pages, size_t page_cnt)
 
   ASSERT (bitmap_all (pool->used_map, page_idx, page_cnt));
   bitmap_set_multiple (pool->used_map, page_idx, page_cnt, false);
+  lock_release(&palloc_lock);
 }
 
 /* Frees the page at PAGE. */
