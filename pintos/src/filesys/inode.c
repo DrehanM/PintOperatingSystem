@@ -115,11 +115,14 @@ void write_all_dirty_sectors() {
   struct cached_sector *cs;
   struct list_elem *e;
   lock_acquire(&buffer_cache_lock);
+  
   for (e = list_front(&buffer_cache); e->next != NULL; e = list_next(e)) {
-      cs = list_entry(e, struct cached_sector, elem);
-
+    cs = list_entry(e, struct cached_sector, elem);
+    if (cs->dirty) {
+      block_write (fs_device, cs->sector_idx, cs->data);
+      cs->dirty = 0;
+    }
   }
-
 
   lock_release(&buffer_cache_lock);
 }
