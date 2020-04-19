@@ -6,19 +6,26 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+static struct list buffer_cache; 
+static struct lock buffer_cache_lock;
+
+static struct list open_inodes;
+static struct lock open_inodes_lock;
+
+
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk
-  {
+struct inode_disk{
     block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
     uint32_t unused[125];               /* Not used. */
-  };
+};
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -29,15 +36,114 @@ bytes_to_sectors (off_t size)
 }
 
 /* In-memory inode. */
-struct inode
-  {
+struct inode {
     struct list_elem elem;              /* Element in inode list. */
+    struct lock l; 			/* Acquire while changing inode  */
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-    struct inode_disk data;             /* Inode content. */
-  };
+    struct inode_disk data;
+};
+
+/* */
+struct cached_sector {
+	block_sector_t sector_idx; // check against when we go through the cache
+	struct list_elem elem; 
+	bool dirty; 
+	struct lock sector_lock; // acquire if currently reading/writing to this sector
+	char data[BLOCK_SECTOR_SIZE]; // of size BLOCK_SECTOR_SIZE, could be inodedisk or data block, up to caller to cast to correct one
+};
+
+/* Gets the cached_sector from buffer_cache. 
+   If sector_idx isnt present, then we evict the last sector and pull in sector_idx from memory. 
+   During eviction, we write back to memory using block_write if the dirty bit is true. 
+   Aquires the sectors lock and returns a pointer to the sector. 
+   Callers of this function must release sectors lock after done using. */
+struct cached_sector *get_cached_sector(block_sector_t sector_idx) {
+  // look for sector_idx in list
+  struct list_elem *e;
+  struct cached_sector *cs;
+
+  lock_acquire(&buffer_cache_lock);
+
+  if (!list_empty(&buffer_cache)) { // iterate through the list and look for matching sector
+    for (e = list_front(&buffer_cache); e->next != NULL; e = list_next(e)) {
+      cs = list_entry(e, struct cached_sector, elem);
+      if (cs->sector_idx == sector_idx) {
+        lock_release(&buffer_cache_lock);
+        lock_acquire(&cs->sector_lock);
+        // make sure that cs hasn't changed because of an eviction
+        if (cs->sector_idx == sector_idx) {
+          return cs;
+        } 
+        // if it has we need to iterate through the list again to make sure it hasnt been pulled in since
+        lock_release(&cs->sector_lock);
+        return get_cached_sector(sector_idx);
+      }
+    }
+  }
+
+  // didnt find item in buffer
+  struct cached_sector *new_cs;
+
+  // if theres still size left, we can just create a cached_sector
+  if (list_size(&buffer_cache) < 64) {
+    new_cs = malloc(sizeof(struct cached_sector));
+    lock_init(&new_cs->sector_lock);
+    lock_acquire(&new_cs->sector_lock);
+  } else { // otherwise we grab the last item in the list
+    new_cs = list_entry(list_back(&buffer_cache), struct cached_sector, elem);
+    lock_acquire(&new_cs->sector_lock); // we block until this sector is no longer in use
+    list_remove(&new_cs->elem);
+    if (new_cs->dirty) { // we need to write back to disk
+      block_write (fs_device, new_cs->sector_idx, new_cs->data);
+    }
+  }
+
+  block_read(fs_device, sector_idx, new_cs->data);
+  new_cs->sector_idx = sector_idx;
+  new_cs->dirty = 0;
+
+  list_push_front(&buffer_cache, &new_cs->elem);
+  lock_release(&buffer_cache_lock);
+  return new_cs;
+}
+
+// Called from filesys_done
+void write_all_dirty_sectors() {
+  struct cached_sector *cs;
+  struct list_elem *e;
+  lock_acquire(&buffer_cache_lock);
+  for (e = list_front(&buffer_cache); e->next != NULL; e = list_next(e)) {
+      cs = list_entry(e, struct cached_sector, elem);
+
+  }
+
+
+  lock_release(&buffer_cache_lock);
+}
+
+// writes buffer into c->data. buffer must be size BLOCK_SECTOR_SIZE
+void cache_write(block_sector_t sector_idx, void *buffer) {
+  struct cached_sector *cs = get_cached_sector(sector_idx);
+  char *buff = buffer;
+  for (int i = 0; i < BLOCK_SECTOR_SIZE; i++) {
+    cs->data[i] = buff[i];
+  }
+  cs->dirty = 1;
+  lock_release(&cs->sector_lock);
+}
+
+// writes c->data into buffer. buffer must be atleast size BLOCK_SECTOR_SIZE
+void cache_read(block_sector_t sector_idx, void *buffer) {
+  struct cached_sector *cs = get_cached_sector(sector_idx);
+  char *buff = buffer;
+  for (int i = 0; i < BLOCK_SECTOR_SIZE; i++) {
+    buff[i] = cs->data[i];
+  }
+  lock_release(&cs->sector_lock);
+}
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
@@ -55,13 +161,15 @@ byte_to_sector (const struct inode *inode, off_t pos)
 
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
-static struct list open_inodes;
 
 /* Initializes the inode module. */
 void
-inode_init (void)
-{
+inode_init (void) {
   list_init (&open_inodes);
+  lock_init(&open_inodes_lock);
+
+  list_init (&buffer_cache);
+  lock_init(&buffer_cache_lock);
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -89,14 +197,14 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->magic = INODE_MAGIC;  
       if (free_map_allocate (sectors, &disk_inode->start))
         {
-            block_write (fs_device, sector, disk_inode);
+          cache_write (sector, disk_inode);
           if (sectors > 0)
             {
               static char zeros[BLOCK_SECTOR_SIZE];
               size_t i;
 
               for (i = 0; i < sectors; i++)
-                block_write (fs_device, disk_inode->start + i, zeros);
+                cache_write (disk_inode->start + i, zeros);
             }
           success = true;
         }
@@ -137,7 +245,7 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  block_read (fs_device, inode->sector, &inode->data);
+  cache_read (inode->sector, &inode->data);
   return inode;
 }
 
@@ -223,7 +331,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Read full sector directly into caller's buffer. */
-          block_read (fs_device, sector_idx, buffer + bytes_read);
+          cache_read(sector_idx, buffer + bytes_read);
         }
       else
         {
@@ -235,7 +343,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
               if (bounce == NULL)
                 break;
             }
-          block_read (fs_device, sector_idx, bounce);
+          cache_read(sector_idx, bounce); // TODO: REMOVE THE BOUNCE
           memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);  
         }
 
@@ -284,7 +392,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Write full sector directly to disk. */
-          block_write (fs_device, sector_idx, buffer + bytes_written);
+          cache_write (sector_idx, buffer + bytes_written);
         }
       else
         {
@@ -299,12 +407,13 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
           /* If the sector contains data before or after the chunk
              we're writing, then we need to read in the sector
              first.  Otherwise we start with a sector of all zeros. */
-          if (sector_ofs > 0 || chunk_size < sector_left)
-            block_read (fs_device, sector_idx, bounce);
-          else
+          if (sector_ofs > 0 || chunk_size < sector_left) {
+            cache_read (sector_idx, bounce);
+          } else {
             memset (bounce, 0, BLOCK_SECTOR_SIZE);
+          }
           memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          block_write (fs_device, sector_idx, bounce);
+          cache_write (sector_idx, bounce);
         }
 
       /* Advance. */

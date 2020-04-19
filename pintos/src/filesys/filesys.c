@@ -35,6 +35,7 @@ filesys_init (bool format)
 void
 filesys_done (void)
 {
+  write_all_dirty_sectors ();
   free_map_close ();
 }
 
