@@ -226,12 +226,14 @@ inode_open (block_sector_t sector)
   struct inode *inode;
 
   /* Check whether this inode is already open. */
+  lock_acquire(&open_inodes_lock);
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e))
     {
       inode = list_entry (e, struct inode, elem);
       if (inode->sector == sector)
         {
+          lock_release(&open_inodes_lock);
           inode_reopen (inode);
           return inode;
         }
@@ -244,6 +246,8 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
+  lock_release(&open_inodes_lock);
+
   inode->sector = sector;
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
@@ -257,7 +261,9 @@ struct inode *
 inode_reopen (struct inode *inode)
 {
   if (inode != NULL)
+    lock_acquire(&(inode->l));
     inode->open_cnt++;
+    lock_release(&(inode->l));
   return inode;
 }
 
@@ -279,10 +285,13 @@ inode_close (struct inode *inode)
     return;
 
   /* Release resources if this was the last opener. */
+  lock_acquire(&(inode->l));
   if (--inode->open_cnt == 0)
     {
       /* Remove from inode list and release lock. */
+      lock_acquire(&open_inodes_lock);
       list_remove (&inode->elem);
+      lock_release(&open_inodes_lock);
 
       /* Deallocate blocks if removed. */
       if (inode->removed)
@@ -291,7 +300,7 @@ inode_close (struct inode *inode)
           free_map_release (inode->data.start,
                             bytes_to_sectors (inode->data.length));
         }
-
+      lock_release(&(inode->l)); // Kinda redundant since we free anyway
       free (inode);
     }
 }
@@ -301,8 +310,10 @@ inode_close (struct inode *inode)
 void
 inode_remove (struct inode *inode)
 {
+  lock_acquire(&(inode->l));
   ASSERT (inode != NULL);
   inode->removed = true;
+  lock_release(&(inode->l));
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -433,9 +444,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
    May be called at most once per inode opener. */
 void
 inode_deny_write (struct inode *inode)
-{
+{ 
+  lock_acquire(&(inode->l));
   inode->deny_write_cnt++;
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
+  lock_release(&(inode->l));
 }
 
 /* Re-enables writes to INODE.
@@ -444,9 +457,11 @@ inode_deny_write (struct inode *inode)
 void
 inode_allow_write (struct inode *inode)
 {
+  lock_acquire(&(inode->l));
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
+  lock_release(&(inode->l));
 }
 
 /* Returns the length, in bytes, of INODE's data. */
