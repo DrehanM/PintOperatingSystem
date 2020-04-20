@@ -248,7 +248,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
       return -1;
     }
 
-  } else { 
+  } else { // Else, we pull the next free level 2 pointer to point to the new sector
     cache_read(doubly_indirect_ptr->ptrs[level2_position], indirect_ptr);
   }
 
