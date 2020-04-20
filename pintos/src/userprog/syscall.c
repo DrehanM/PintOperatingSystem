@@ -14,7 +14,7 @@
 
 
 static void syscall_handler (struct intr_frame *);
-static struct lock global_file_lock;
+//static struct lock global_file_lock;
 static size_t fd_count = 2;
 
 static
@@ -54,7 +54,7 @@ exit(int exit_status) {
 
 static void
 exit_file_call(int exit_status) {
-  lock_release(&global_file_lock);
+  //lock_release(&global_file_lock);
   exit(exit_status);
 }
 
@@ -95,7 +95,7 @@ remove_file(int fd) {
 void
 syscall_init (void)
 {
-  lock_init(&global_file_lock);
+  //lock_init(&global_file_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -196,7 +196,7 @@ close_thread_fd(thread_fd_t *fd) {
 static void
 file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
-  lock_acquire(&global_file_lock);
+  //lock_acquire(&global_file_lock);
   switch (args[0]) {
     // LUKE AND CHRIS
 
@@ -279,7 +279,7 @@ file_operation_handler(struct intr_frame *f) {
       break;
     }
   }
-  lock_release(&global_file_lock);
+  //lock_release(&global_file_lock);
 }
 
 static void
