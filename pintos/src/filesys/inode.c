@@ -11,6 +11,9 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+#define NUM_POINTERS 128
+#define MAX_FILE_SIZE 512 * 128 * 128
+
 static struct list buffer_cache; 
 static struct lock buffer_cache_lock;
 
@@ -20,8 +23,8 @@ static struct lock open_inodes_lock;
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
-struct inode_disk{
-    block_sector_t start;               /* First data sector. */
+struct inode_disk {
+    block_sector_t indirect_ptr_idx;    /* Sector index of indirect pointer. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
     uint32_t unused[125];               /* Not used. */
@@ -44,6 +47,10 @@ struct inode {
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;
+};
+
+struct indirect {
+  block_sector_t ptrs[NUM_POINTERS];
 };
 
 /* */
@@ -184,6 +191,7 @@ bool
 inode_create (block_sector_t sector, off_t length)
 {
   struct inode_disk *disk_inode = NULL;
+  struct indirect *doubly_indirect_ptr = NULL;
   bool success = false;
 
   ASSERT (length >= 0);
@@ -193,27 +201,66 @@ inode_create (block_sector_t sector, off_t length)
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
   disk_inode = calloc (1, sizeof *disk_inode);
-  if (disk_inode != NULL)
+  doubly_indirect_ptr = calloc(1, sizeof *doubly_indirect_ptr);
+  if (disk_inode != NULL && doubly_indirect_ptr != NULL)
     {
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
-      disk_inode->magic = INODE_MAGIC;  
-      if (free_map_allocate (sectors, &disk_inode->start))
+      disk_inode->magic = INODE_MAGIC; 
+      
+      if (free_map_allocate(1, &disk_inode->indirect_ptr_idx))
         {
-          cache_write (sector, disk_inode);
-          if (sectors > 0)
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-
-              for (i = 0; i < sectors; i++)
-                cache_write (disk_inode->start + i, zeros);
+          cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+          if (sectors > 0) {
+            size_t i;
+            for (i = 0; i < sectors; i++) {
+              add_sector_to_file(disk_inode);
             }
+          }
+          cache_write (sector, disk_inode);
           success = true;
         }
       free (disk_inode);
     }
   return success;
+}
+
+block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
+  struct indirect *doubly_indirect_ptr = NULL;
+  struct indirect *indirect_ptr = NULL;
+  static char zeros[BLOCK_SECTOR_SIZE];
+  
+  if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
+    return -1;
+  }
+
+  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+
+  int level1_position = (disk_inode->length / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
+  int level2_position = (disk_inode->length / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
+
+  if (level2_position == 0) { // We must create a new level 2 indirect pointer node in the doubly indirect pointer array
+    indirect_ptr = calloc(1, sizeof *indirect_ptr);
+    
+    if (free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
+      cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+    } else {
+      return -1;
+    }
+
+  } else { 
+    cache_read(doubly_indirect_ptr->ptrs[level2_position], indirect_ptr);
+  }
+
+  if (!free_map_allocate(1, &indirect_ptr->ptrs[level2_position]))
+    return -1;
+
+  disk_inode->length += BLOCK_SECTOR_SIZE;
+    
+  cache_write(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
+  cache_write(indirect_ptr->ptrs[level2_position], zeros);
+
+  return indirect_ptr->ptrs[level2_position];
 }
 
 /* Reads an inode from SECTOR
