@@ -163,10 +163,25 @@ static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
-  if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
-  else
+
+  struct inode_disk *disk_inode  = NULL;
+  struct indirect *doubly_indirect_ptr = NULL;
+  struct indirect *indirect_ptr = NULL;
+
+  cache_read(inode->sector, disk_inode);
+  
+  
+  if (pos < disk_inode->length) {
+    int level1_position = (pos / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
+    int level2_position = (pos / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
+
+    cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+    cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
+
+    return indirect_ptr->ptrs[level2_position];
+  } else { 
     return -1;
+  }
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -180,6 +195,50 @@ inode_init (void) {
 
   list_init (&buffer_cache);
   lock_init(&buffer_cache_lock);
+}
+
+/* Allocates and appends a new data sector to the end of the file */
+/* If a level 2 indirect pointer is full, creates a new indirect level 2 indirect pointer */
+/* Returns 0 on failure */
+block_sector_t add_sector_to_file(block_sector_t sector) {
+  struct inode_disk *disk_inode = NULL;
+  struct indirect *doubly_indirect_ptr = NULL;
+  struct indirect *indirect_ptr = NULL;
+  static char zeros[BLOCK_SECTOR_SIZE];
+
+  cache_read(sector, disk_inode);
+  
+  if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
+    return 0;
+  }
+
+  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+
+  int level1_position = (disk_inode->length / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
+  int level2_position = (disk_inode->length / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
+
+  if (level2_position == 0) { // We must create a new level 2 indirect pointer node in the doubly indirect pointer array
+    indirect_ptr = calloc(1, sizeof *indirect_ptr);
+    
+    if (free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
+      cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+    } else {
+      return 0;
+    }
+
+  } else { // Else, we pull the next free level 2 pointer to point to the new sector
+    cache_read(doubly_indirect_ptr->ptrs[level2_position], indirect_ptr);
+  }
+
+  if (!free_map_allocate(1, &indirect_ptr->ptrs[level2_position]))
+    return 0;
+
+  disk_inode->length += BLOCK_SECTOR_SIZE;
+    
+  cache_write(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
+  cache_write(indirect_ptr->ptrs[level2_position], zeros);
+
+  return indirect_ptr->ptrs[level2_position];
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -213,8 +272,13 @@ inode_create (block_sector_t sector, off_t length)
           cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
           if (sectors > 0) {
             size_t i;
+            block_sector_t new_sector;
             for (i = 0; i < sectors; i++) {
-              add_sector_to_file(disk_inode);
+             new_sector = add_sector_to_file(disk_inode);
+             if (new_sector == 0) {
+               free (disk_inode);
+               return false;
+             }
             }
           }
           cache_write (sector, disk_inode);
@@ -223,44 +287,6 @@ inode_create (block_sector_t sector, off_t length)
       free (disk_inode);
     }
   return success;
-}
-
-block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
-  struct indirect *doubly_indirect_ptr = NULL;
-  struct indirect *indirect_ptr = NULL;
-  static char zeros[BLOCK_SECTOR_SIZE];
-  
-  if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
-    return -1;
-  }
-
-  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
-
-  int level1_position = (disk_inode->length / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
-  int level2_position = (disk_inode->length / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
-
-  if (level2_position == 0) { // We must create a new level 2 indirect pointer node in the doubly indirect pointer array
-    indirect_ptr = calloc(1, sizeof *indirect_ptr);
-    
-    if (free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
-      cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
-    } else {
-      return -1;
-    }
-
-  } else { // Else, we pull the next free level 2 pointer to point to the new sector
-    cache_read(doubly_indirect_ptr->ptrs[level2_position], indirect_ptr);
-  }
-
-  if (!free_map_allocate(1, &indirect_ptr->ptrs[level2_position]))
-    return -1;
-
-  disk_inode->length += BLOCK_SECTOR_SIZE;
-    
-  cache_write(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
-  cache_write(indirect_ptr->ptrs[level2_position], zeros);
-
-  return indirect_ptr->ptrs[level2_position];
 }
 
 /* Reads an inode from SECTOR
@@ -321,6 +347,23 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
+void free_all_data_sectors(struct inode *inode) {
+  struct inode_disk *disk_inode = NULL;
+  struct indirect *doubly_indirect_ptr = NULL;
+  struct indirect *indirect_ptr = NULL;
+  cache_read(inode->sector, disk_inode);
+  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+
+  for (int i = 0; i < NUM_POINTERS && doubly_indirect_ptr->ptrs[i] != 0; i++) {
+    cache_read(doubly_indirect_ptr->ptrs[i], indirect_ptr);
+    for (int j = 0; j < NUM_POINTERS && indirect_ptr->ptrs[j] != 0; j++) {
+      free_map_release(indirect_ptr->ptrs[j], 1);
+    }
+    free_map_release(doubly_indirect_ptr->ptrs[i], 1);
+  }
+  free_map_release(disk_inode->indirect_ptr_idx, 1);
+}
+
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
@@ -343,9 +386,8 @@ inode_close (struct inode *inode)
       /* Deallocate blocks if removed. */
       if (inode->removed)
         {
+          free_all_data_sectors(inode);
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length));
         }
       lock_release(&(inode->l)); // Kinda redundant since we free anyway
       free (inode);
