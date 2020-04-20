@@ -303,6 +303,8 @@ inode_close (struct inode *inode)
         }
       lock_release(&(inode->l)); // Kinda redundant since we free anyway
       free (inode);
+    } else {
+      lock_release(&(inode->l));
     }
 }
 
