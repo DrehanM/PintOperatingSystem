@@ -135,24 +135,34 @@ void write_all_dirty_sectors() {
 }
 
 // writes buffer into c->data. buffer must be size BLOCK_SECTOR_SIZE
-void cache_write(block_sector_t sector_idx, void *buffer) {
+void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, off_t sector_ofs) {
+  ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (int i = 0; i < BLOCK_SECTOR_SIZE; i++) {
+  for (off_t i = sector_ofs; i < sector_ofs + size; i++) {
     cs->data[i] = buff[i];
   }
   cs->dirty = 1;
   lock_release(&cs->sector_lock);
 }
 
+void cache_write(block_sector_t sector_idx, void *buffer) {
+  cache_write_with_size_and_offset(sector_idx, buffer, 0, BLOCK_SECTOR_SIZE);
+}
+
 // writes c->data into buffer. buffer must be atleast size BLOCK_SECTOR_SIZE
-void cache_read(block_sector_t sector_idx, void *buffer) {
+void cache_read_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, off_t sector_ofs) {
+  ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (int i = 0; i < BLOCK_SECTOR_SIZE; i++) {
+  for (off_t i = sector_ofs; i < sector_ofs + size; i++) {
     buff[i] = cs->data[i];
   }
   lock_release(&cs->sector_lock);
+}
+
+void cache_read(block_sector_t sector_idx, void *buffer) {
+  cache_read_with_size_and_offset(sector_idx, buffer, 0, BLOCK_SECTOR_SIZE);
 }
 
 /* Returns the block device sector that contains byte offset POS
@@ -239,6 +249,72 @@ block_sector_t add_sector_to_file(block_sector_t sector) {
   cache_write(indirect_ptr->ptrs[level2_position], zeros);
 
   return indirect_ptr->ptrs[level2_position];
+}
+
+/* Resizes file. Rolls back actions if allocation fails */
+bool inode_resize(struct inode *inode, off_t size) {
+  struct inode_disk *disk_inode = NULL;
+  struct indirect *doubly_indirect_ptr = NULL;
+  struct indirect *indirect_ptr = NULL;
+  static char zeros[BLOCK_SECTOR_SIZE];
+  
+  cache_read(inode->sector, disk_inode);
+  
+  if (disk_inode->indirect_ptr_idx == 0 && size == 0) {
+    return true;
+  }
+
+  size_t original_length = disk_inode->length;
+  
+  if (disk_inode->indirect_ptr_idx == 0) {
+    block_sector_t sector = add_sector_to_file(inode->sector);
+    if (sector == 0) {
+      inode_resize(inode, original_length);
+      return false;
+    }
+    disk_inode->indirect_ptr_idx = sector;
+  } else {
+    cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
+  }
+  
+  for (int i = 0; i < NUM_POINTERS; i++) {
+    for (int j = 0; j < NUM_POINTERS; j++) {
+      if (doubly_indirect_ptr->ptrs[i] != 0) {
+        cache_read(doubly_indirect_ptr->ptrs[i], indirect_ptr);
+      }
+      
+      if (size <= i * (BLOCK_SECTOR_SIZE * BLOCK_SECTOR_SIZE) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] != 0) {
+        free_map_release(indirect_ptr->ptrs[j], 1);
+        indirect_ptr->ptrs[j] = 0;
+      }
+      
+      if (size > i * (BLOCK_SECTOR_SIZE * BLOCK_SECTOR_SIZE) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] == 0) {
+        block_sector_t sector = add_sector_to_file(inode->sector);
+        if (sector == 0) {
+          inode_resize(inode, original_length);
+          return false;
+        }
+      }
+    }
+    if (size <= i * (BLOCK_SECTOR_SIZE * BLOCK_SECTOR_SIZE) && doubly_indirect_ptr->ptrs[i] != 0) {
+      free_map_release(doubly_indirect_ptr->ptrs[i], 1);
+      doubly_indirect_ptr->ptrs[i] = 0;
+    }
+
+    if (size > i * (BLOCK_SECTOR_SIZE * BLOCK_SECTOR_SIZE) && doubly_indirect_ptr->ptrs[i] == 0) {
+      block_sector_t sector = add_sector_to_file(inode->sector);
+      if (sector == 0) {
+        inode_resize(inode, original_length);
+        return false;
+      }
+    }
+  }
+
+  if (size == 0) {
+    free_map_release(disk_inode->indirect_ptr_idx, 1);
+  }
+
+  return true;
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -349,20 +425,7 @@ inode_get_inumber (const struct inode *inode)
 }
 
 void free_all_data_sectors(struct inode *inode) {
-  struct inode_disk *disk_inode = NULL;
-  struct indirect *doubly_indirect_ptr = NULL;
-  struct indirect *indirect_ptr = NULL;
-  cache_read(inode->sector, disk_inode);
-  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
-
-  for (int i = 0; i < NUM_POINTERS && doubly_indirect_ptr->ptrs[i] != 0; i++) {
-    cache_read(doubly_indirect_ptr->ptrs[i], indirect_ptr);
-    for (int j = 0; j < NUM_POINTERS && indirect_ptr->ptrs[j] != 0; j++) {
-      free_map_release(indirect_ptr->ptrs[j], 1);
-    }
-    free_map_release(doubly_indirect_ptr->ptrs[i], 1);
-  }
-  free_map_release(disk_inode->indirect_ptr_idx, 1);
+  inode_resize(inode, 0);
 }
 
 /* Closes INODE and writes it to disk.
@@ -434,31 +497,13 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (chunk_size <= 0)
         break;
 
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Read full sector directly into caller's buffer. */
-          cache_read(sector_idx, buffer + bytes_read);
-        }
-      else
-        {
-          /* Read sector into bounce buffer, then partially copy
-             into caller's buffer. */
-          if (bounce == NULL)
-            {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
-            }
-          cache_read(sector_idx, bounce); // TODO: REMOVE THE BOUNCE
-          memcpy (buffer + bytes_read, bounce + sector_ofs, chunk_size);  
-        }
-
+      cache_read_with_size_and_offset(sector_idx, buffer + bytes_read, chunk_size, sector_ofs);
+      
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_read += chunk_size;
     }
-  free (bounce);
 
   return bytes_read;
 }
@@ -472,12 +517,25 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset)
 {
+  ASSERT(inode != NULL);
+  
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
   uint8_t *bounce = NULL;
 
+  lock_acquire(&(inode->l));
+
   if (inode->deny_write_cnt)
     return 0;
+
+  if (inode_length(inode) < size + offset) {
+    size_t num_new_sectors = bytes_to_sectors(size + offset - inode_length(inode));
+    for (int i = 0; i < num_new_sectors; i++) {
+      add_sector_to_file(inode->sector);
+    }
+  }
+
+  lock_release(&(inode->l));
 
   while (size > 0)
     {
@@ -495,39 +553,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       if (chunk_size <= 0)
         break;
 
-      if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
-        {
-          /* Write full sector directly to disk. */
-          cache_write (sector_idx, buffer + bytes_written);
-        }
-      else
-        {
-          /* We need a bounce buffer. */
-          if (bounce == NULL)
-            {
-              bounce = malloc (BLOCK_SECTOR_SIZE);
-              if (bounce == NULL)
-                break;
-            }
-
-          /* If the sector contains data before or after the chunk
-             we're writing, then we need to read in the sector
-             first.  Otherwise we start with a sector of all zeros. */
-          if (sector_ofs > 0 || chunk_size < sector_left) {
-            cache_read (sector_idx, bounce);
-          } else {
-            memset (bounce, 0, BLOCK_SECTOR_SIZE);
-          }
-          memcpy (bounce + sector_ofs, buffer + bytes_written, chunk_size);
-          cache_write (sector_idx, bounce);
-        }
+      
+      cache_write_with_size_and_offset(sector_idx, buffer + bytes_written, chunk_size, sector_ofs);
 
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
     }
-  free (bounce);
 
   return bytes_written;
 }
@@ -560,5 +593,7 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 {
-  return inode->data.length;
+  struct inode_disk *disk_inode = NULL;
+  cache_read(inode->sector, disk_inode);
+  return disk_inode->length;
 }
