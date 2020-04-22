@@ -137,11 +137,11 @@ void write_all_dirty_sectors() {
 // writes buffer into c->data. buffer must be size SIZE.
 // Only called when we don't want to write the whole block sector (e.g. inode_write_at)
 // Also called in cache_write with args SIZE = BLOCK_SECTOR_SIZE and SECTOR_OFS = 0
-void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, off_t size, off_t sector_ofs) {
+void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, size_t sector_ofs) {
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (off_t i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     cs->data[i + sector_ofs] = buff[i];
   }
   cs->dirty = 1;
@@ -155,11 +155,11 @@ void cache_write(block_sector_t sector_idx, void *buffer) {
 // writes c->data into buffer. buffer must be atleast size SIZE.
 // Only called when we don't want to read the whole block sector (e.g. inode_read_at)
 // Also called in cache_read with args SIZE = BLOCK_SECTOR_SIZE and SECTOR_OFS = 0
-void cache_read_with_size_and_offset(block_sector_t sector_idx, void *buffer, off_t size, off_t sector_ofs) {
+void cache_read_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, size_t sector_ofs) {
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (off_t i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     buff[i] = cs->data[i + sector_ofs];
   }
   lock_release(&cs->sector_lock);
@@ -192,8 +192,16 @@ byte_to_sector (const struct inode *inode, off_t pos)
     cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
     cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
 
-    return indirect_ptr->ptrs[level2_position];
+    block_sector_t result = indirect_ptr->ptrs[level2_position];
+
+    free(disk_inode);
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return result;
   } else { 
+    free(disk_inode);
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
     return -1;
   }
 }
@@ -521,7 +529,7 @@ inode_remove (struct inode *inode)
    Returns the number of bytes actually read, which may be less
    than SIZE if an error occurs or end of file is reached. */
 off_t
-inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
+inode_read_at (struct inode *inode, void *buffer_, size_t size, size_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
@@ -559,8 +567,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
    (Normally a write at end of file would extend the inode, but
    growth is not yet implemented.) */
 off_t
-inode_write_at (struct inode *inode, const void *buffer_, off_t size,
-                off_t offset)
+inode_write_at (struct inode *inode, const void *buffer_, size_t size,
+                size_t offset)
 {
   
   ASSERT(inode != NULL);
@@ -573,6 +581,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     lock_acquire(&(inode->l));
 
   if (inode->deny_write_cnt) {
+    lock_release(&(inode->l));
     free(disk_inode);
     return 0;
   }
