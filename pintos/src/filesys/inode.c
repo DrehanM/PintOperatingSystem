@@ -261,7 +261,10 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
     }
     
     cache_write(doubly_indirect_ptr->ptrs[level1_position], zeros);
-    return doubly_indirect_ptr->ptrs[level1_position];
+    block_sector_t result = doubly_indirect_ptr->ptrs[level1_position];
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return result;
   } else { // Else, we pull the next free singly pointer to point to the new sector
     cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
   }
@@ -273,9 +276,10 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
   }
 
   cache_write(indirect_ptr->ptrs[level2_position], zeros);
+  block_sector_t result = indirect_ptr->ptrs[level2_position];
   free(doubly_indirect_ptr);
   free(indirect_ptr);
-  return indirect_ptr->ptrs[level2_position];
+  return result;
 }
 
 
