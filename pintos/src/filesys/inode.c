@@ -180,12 +180,13 @@ byte_to_sector (const struct inode *inode, off_t pos)
   ASSERT (inode != NULL);
 
   struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
-  struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
-  struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
-
+  
   cache_read(inode->sector, disk_inode);
   
   if (pos < disk_inode->length) {
+    struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
+    struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
+
     int level1_position = (pos / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
     int level2_position = (pos / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
 
@@ -198,12 +199,10 @@ byte_to_sector (const struct inode *inode, off_t pos)
     free(doubly_indirect_ptr);
     free(indirect_ptr);
     return result;
-  } else { 
-    free(disk_inode);
-    free(doubly_indirect_ptr);
-    free(indirect_ptr);
-    return -1;
   }
+    
+  free(disk_inode);
+  return -1;
 }
 
 /* List of open inodes, so that opening a single inode twice
