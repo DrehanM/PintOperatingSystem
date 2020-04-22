@@ -212,7 +212,7 @@ inode_init (void) {
 }
 
 /* Allocates and appends a new data sector to the end of the file */
-/* If a level 2 indirect pointer is full, creates a new indirect level 2 indirect pointer */
+/* Creates indirect pointers as needed. Returns sector number of allocated data sector. */
 /* Returns 0 on failure */
 block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
   struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
@@ -222,7 +222,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
 
   if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
     free(doubly_indirect_ptr);
-      free(indirect_ptr);
+    free(indirect_ptr);
     return 0;
   }
 
@@ -244,7 +244,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
   int level1_position = (disk_inode->length / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
   int level2_position = (disk_inode->length / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
 
-  if (level2_position == 0) { // We must create a new level 2 indirect pointer node in the doubly indirect pointer array
+  if (level2_position == 0) { // We must create a new singly indirect pointer node in the doubly indirect pointer array
     indirect_ptr = calloc(1, sizeof *indirect_ptr);
     
     if (!free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
@@ -255,7 +255,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
     
     cache_write(doubly_indirect_ptr->ptrs[level1_position], zeros);
     return doubly_indirect_ptr->ptrs[level1_position];
-  } else { // Else, we pull the next free level 2 pointer to point to the new sector
+  } else { // Else, we pull the next free singly pointer to point to the new sector
     cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
   }
 
@@ -278,6 +278,8 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
   struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
 
   if (disk_inode->indirect_ptr_idx == 0 && size == 0) {
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
     return true;
   }
 
@@ -286,6 +288,8 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
   if (disk_inode->indirect_ptr_idx == 0) {
     block_sector_t sector = add_sector_to_file(disk_inode);
     if (sector == 0) {
+      free(doubly_indirect_ptr);
+      free(indirect_ptr);
       inode_resize(disk_inode, original_length);
       return false;
     }
@@ -370,8 +374,8 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
 bool
 inode_create (block_sector_t sector, off_t length)
 {
-  struct inode_disk *disk_inode = NULL;
-  struct indirect *doubly_indirect_ptr = NULL;
+  struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
+  struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
   bool success = false;
 
   ASSERT (length >= 0);
@@ -380,8 +384,6 @@ inode_create (block_sector_t sector, off_t length)
      one sector in size, and you should fix that. */
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
-  disk_inode = calloc (1, sizeof *disk_inode);
-  doubly_indirect_ptr = calloc(1, sizeof *doubly_indirect_ptr);
   if (disk_inode != NULL && doubly_indirect_ptr != NULL)
     {
       disk_inode->magic = INODE_MAGIC; 
@@ -391,6 +393,7 @@ inode_create (block_sector_t sector, off_t length)
           cache_write(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
           if (length > 0) {
              if (!inode_resize(disk_inode, length)) {
+               free (doubly_indirect_ptr);
                free (disk_inode);
                return false;
              }
@@ -398,6 +401,7 @@ inode_create (block_sector_t sector, off_t length)
           cache_write (sector, disk_inode);
           success = true;
         }
+      free (doubly_indirect_ptr);
       free (disk_inode);
     }
   return success;
@@ -464,9 +468,10 @@ inode_get_inumber (const struct inode *inode)
 }
 
 void free_all_data_sectors(struct inode *inode) {
-  struct inode_disk *disk_inode = NULL;
+  struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
   cache_read(inode->sector, disk_inode);
   inode_resize(disk_inode, 0);
+  free(disk_inode);
 }
 
 /* Closes INODE and writes it to disk.
@@ -644,5 +649,7 @@ inode_length (const struct inode *inode)
 {
   struct inode_disk *disk_inode = calloc(1, sizeof (struct inode_disk));
   cache_read(inode->sector, disk_inode);
-  return disk_inode->length;
+  size_t result = disk_inode->length;
+  free(disk_inode);
+  return result;
 }
