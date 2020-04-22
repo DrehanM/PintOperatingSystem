@@ -141,15 +141,15 @@ void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, o
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (off_t i = sector_ofs; i < sector_ofs + size; i++) {
-    cs->data[i] = buff[i];
+  for (off_t i = 0; i < size; i++) {
+    cs->data[i + sector_ofs] = buff[i];
   }
   cs->dirty = 1;
   lock_release(&cs->sector_lock);
 }
 
 void cache_write(block_sector_t sector_idx, void *buffer) {
-  cache_write_with_size_and_offset(sector_idx, buffer, 0, BLOCK_SECTOR_SIZE);
+  cache_write_with_size_and_offset(sector_idx, buffer, BLOCK_SECTOR_SIZE, 0);
 }
 
 // writes c->data into buffer. buffer must be atleast size SIZE.
@@ -159,15 +159,15 @@ void cache_read_with_size_and_offset(block_sector_t sector_idx, void *buffer, of
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
-  for (off_t i = sector_ofs; i < sector_ofs + size; i++) {
-    buff[i] = cs->data[i];
+  for (off_t i = 0; i < size; i++) {
+    buff[i] = cs->data[i + sector_ofs];
   }
   lock_release(&cs->sector_lock);
 }
 
 // 
 void cache_read(block_sector_t sector_idx, void *buffer) {
-  cache_read_with_size_and_offset(sector_idx, buffer, 0, BLOCK_SECTOR_SIZE);
+  cache_read_with_size_and_offset(sector_idx, buffer, BLOCK_SECTOR_SIZE, 0);
 }
 
 /* Returns the block device sector that contains byte offset POS
@@ -179,12 +179,11 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
 
-  struct inode_disk *disk_inode  = NULL;
-  struct indirect *doubly_indirect_ptr = NULL;
-  struct indirect *indirect_ptr = NULL;
+  struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
+  struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
+  struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
 
   cache_read(inode->sector, disk_inode);
-  
   
   if (pos < disk_inode->length) {
     int level1_position = (pos / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
@@ -580,8 +579,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
         free(disk_inode);
         return 0;
       }
+      cache_write(inode->sector, disk_inode);
   }
   lock_release(&(inode->l));
+  
+  
   
 
   while (size > 0)
