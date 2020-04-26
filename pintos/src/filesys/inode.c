@@ -231,22 +231,26 @@ inode_init (void) {
 block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
   struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
   struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
-  block_sector_t result = 0;
   
   static char zeros[BLOCK_SECTOR_SIZE];
 
   if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
-    goto DONE;
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return 0;
   }
 
   if (disk_inode->indirect_ptr_idx == 0) {
     if (!free_map_allocate(1, &disk_inode->indirect_ptr_idx)) {
-      goto DONE;
+      free(doubly_indirect_ptr);
+      free(indirect_ptr);
+      return 0;
     }
     
     cache_write(disk_inode->indirect_ptr_idx, zeros);
-    result = disk_inode->indirect_ptr_idx;
-    goto DONE;
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return disk_inode->indirect_ptr_idx;
   }
 
   cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
@@ -258,24 +262,28 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
     indirect_ptr = calloc(1, sizeof *indirect_ptr);
     
     if (!free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
-      goto DONE;
+      free(doubly_indirect_ptr);
+      free(indirect_ptr);
+      return 0;
     }
     
     cache_write(doubly_indirect_ptr->ptrs[level1_position], zeros);
-    result = doubly_indirect_ptr->ptrs[level1_position];
-    goto DONE;
+    block_sector_t result = doubly_indirect_ptr->ptrs[level1_position];
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return result;
   } else { // Else, we pull the next free singly pointer to point to the new sector
     cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
   }
 
   if (!free_map_allocate(1, &indirect_ptr->ptrs[level2_position])) {
-    goto DONE;
+    free(doubly_indirect_ptr);
+    free(indirect_ptr);
+    return 0;
   }
   
   cache_write(indirect_ptr->ptrs[level2_position], zeros);
   block_sector_t result = indirect_ptr->ptrs[level2_position];
-
-  DONE: 
   free(doubly_indirect_ptr);
   free(indirect_ptr);
   return result;
