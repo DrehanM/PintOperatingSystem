@@ -51,7 +51,6 @@ struct inode {
     size_t active_readers;
     size_t waiting_writers;
     size_t waiting_readers;
-    size_t active_extenders;
     struct condition ok_to_read;
     struct condition ok_to_write;
 };
@@ -403,7 +402,6 @@ inode_open (block_sector_t sector)
   inode->active_readers = 0;
   inode->waiting_writers = 0;
   inode->waiting_readers = 0;
-  inode->active_extenders = 0;
   
   cond_init(&(inode->ok_to_read));
   cond_init(&(inode->ok_to_write));
@@ -550,18 +548,18 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
 
   reader_checkout(inode);
 
-  extender_checkin(inode);
+  writer_checkin(inode);
   if (inode_length(inode) < size + offset) {
       is_extension = true;
       cache_read(inode->sector, disk_inode);
       if (!inode_resize(disk_inode, size + offset)) {
-        extender_checkout(inode);
+        writer_checkout(inode);
         free(disk_inode);
         return 0;
       }
       cache_write(inode->sector, disk_inode);
   } else {
-    extender_checkout(inode);
+    writer_checkout(inode);
     reader_checkin(inode);
   }
 
@@ -591,7 +589,7 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
     }
   
   if (is_extension) {
-    extender_checkout(inode);
+    writer_checkout(inode);
   } else {
     reader_checkout(inode);
   }
@@ -639,7 +637,7 @@ inode_length (const struct inode *inode)
  * Required to checkin for the entirety of inode_read_at call */
 void reader_checkin(struct inode *inode) {
   lock_acquire(&(inode->l));
-  while (inode->active_writers + inode->waiting_writers + inode->active_extenders > 0) {
+  while (inode->active_writers + inode->waiting_writers > 0) {
     inode->waiting_readers++;
     cond_wait(&(inode->ok_to_read), &(inode->l));
     inode->waiting_readers--;
@@ -660,7 +658,7 @@ void reader_checkout(struct inode *inode) {
 /* Called when process wants to edit inode data. */
 void writer_checkin(struct inode *inode) {
   lock_acquire(&(inode->l));
-  while (inode->active_writers + inode->active_readers + inode->active_extenders > 0) {
+  while (inode->active_writers + inode->active_readers > 0) {
     inode->waiting_writers++;
     cond_wait(&(inode->ok_to_write), &(inode->l));
     inode->waiting_writers--;
@@ -672,29 +670,6 @@ void writer_checkin(struct inode *inode) {
 void writer_checkout(struct inode *inode) {
   lock_acquire(&(inode->l));
   inode->active_writers--;
-  if (inode->waiting_writers > 0) {
-    cond_signal(&(inode->ok_to_write), &(inode->l));
-  } else if (inode->waiting_readers > 0) {
-    cond_broadcast(&(inode->ok_to_read), &(inode->l));
-  }
-  lock_release(&(inode->l));
-};
-
-/* Called when process intends to extend a file in inode_write_at */
-void extender_checkin(struct inode *inode) {
-  lock_acquire(&(inode->l));
-  while (inode->active_writers + inode->active_readers) {
-    inode->waiting_writers++;
-    cond_wait(&(inode->ok_to_write), &(inode->l));
-    inode->waiting_writers--;
-  }
-  inode->active_extenders++;
-  lock_release(&(inode->l));
-};
-
-void extender_checkout(struct inode *inode) {
-  lock_acquire(&(inode->l));
-  inode->active_extenders--;
   if (inode->waiting_writers > 0) {
     cond_signal(&(inode->ok_to_write), &(inode->l));
   } else if (inode->waiting_readers > 0) {
