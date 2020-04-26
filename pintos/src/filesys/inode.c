@@ -228,65 +228,13 @@ inode_init (void) {
 /* Allocates and appends a new data sector to the end of the file */
 /* Creates indirect pointers as needed. Returns sector number of allocated data sector. */
 /* Returns 0 on failure */
-block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
-  struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
-  struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
-  
+bool add_sector_to_file(struct inode_disk *disk_inode, block_sector_t *sector) {
   static char zeros[BLOCK_SECTOR_SIZE];
-
-  if (disk_inode->length + BLOCK_SECTOR_SIZE >= MAX_FILE_SIZE) {
-    free(doubly_indirect_ptr);
-    free(indirect_ptr);
-    return 0;
+  if (free_map_allocate(1, sector)) {
+    cache_write(*sector, zeros);
+    return true;
   }
-
-  if (disk_inode->indirect_ptr_idx == 0) {
-    if (!free_map_allocate(1, &disk_inode->indirect_ptr_idx)) {
-      free(doubly_indirect_ptr);
-      free(indirect_ptr);
-      return 0;
-    }
-    
-    cache_write(disk_inode->indirect_ptr_idx, zeros);
-    free(doubly_indirect_ptr);
-    free(indirect_ptr);
-    return disk_inode->indirect_ptr_idx;
-  }
-
-  cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
-
-  int level1_position = (disk_inode->length / BLOCK_SECTOR_SIZE) / NUM_POINTERS;
-  int level2_position = (disk_inode->length / BLOCK_SECTOR_SIZE) % NUM_POINTERS;
-
-  if (level2_position == 0) { // We must create a new singly indirect pointer node in the doubly indirect pointer array
-    indirect_ptr = calloc(1, sizeof *indirect_ptr);
-    
-    if (!free_map_allocate(1, &doubly_indirect_ptr->ptrs[level1_position])) {
-      free(doubly_indirect_ptr);
-      free(indirect_ptr);
-      return 0;
-    }
-    
-    cache_write(doubly_indirect_ptr->ptrs[level1_position], zeros);
-    block_sector_t result = doubly_indirect_ptr->ptrs[level1_position];
-    free(doubly_indirect_ptr);
-    free(indirect_ptr);
-    return result;
-  } else { // Else, we pull the next free singly pointer to point to the new sector
-    cache_read(doubly_indirect_ptr->ptrs[level1_position], indirect_ptr);
-  }
-
-  if (!free_map_allocate(1, &indirect_ptr->ptrs[level2_position])) {
-    free(doubly_indirect_ptr);
-    free(indirect_ptr);
-    return 0;
-  }
-  
-  cache_write(indirect_ptr->ptrs[level2_position], zeros);
-  block_sector_t result = indirect_ptr->ptrs[level2_position];
-  free(doubly_indirect_ptr);
-  free(indirect_ptr);
-  return result;
+  return false;
 }
 
 
@@ -294,6 +242,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
 bool inode_resize(struct inode_disk *disk_inode, off_t size) {
   struct indirect *doubly_indirect_ptr = calloc(1, sizeof(struct indirect));
   struct indirect *indirect_ptr = calloc(1, sizeof(struct indirect));
+
 
   if (disk_inode->indirect_ptr_idx == 0 && size == 0) {
     free(doubly_indirect_ptr);
@@ -304,14 +253,12 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
   size_t original_length = disk_inode->length;
   
   if (disk_inode->indirect_ptr_idx == 0) {
-    block_sector_t sector = add_sector_to_file(disk_inode);
-    if (sector == 0) {
+    if (!add_sector_to_file(disk_inode, &disk_inode->indirect_ptr_idx)) {
       free(doubly_indirect_ptr);
       free(indirect_ptr);
       inode_resize(disk_inode, original_length);
       return false;
     }
-    disk_inode->indirect_ptr_idx = sector;
   }
 
   cache_read(disk_inode->indirect_ptr_idx, doubly_indirect_ptr);
@@ -321,14 +268,12 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
     
     // Allocate a singly indirect sector if we need one
     if (size > i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) && doubly_indirect_ptr->ptrs[i] == 0) {
-      block_sector_t sector = add_sector_to_file(disk_inode);
-      if (sector == 0) {
+      if (!add_sector_to_file(disk_inode, &doubly_indirect_ptr->ptrs[i])) {
         free(doubly_indirect_ptr);
         free(indirect_ptr);
         inode_resize(disk_inode, original_length);
         return false;
       }
-      doubly_indirect_ptr->ptrs[i] = sector;
     }
 
     if (doubly_indirect_ptr->ptrs[i] != 0) {
@@ -338,14 +283,12 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
       for (int j = 0; j < NUM_POINTERS; j++) {        
         // Allocate a data sector if we need one
         if (size > i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] == 0) {
-          block_sector_t sector = add_sector_to_file(disk_inode);
-          if (sector == 0) {
+          if (!add_sector_to_file(disk_inode, &indirect_ptr->ptrs[j])) {
             free(doubly_indirect_ptr);
             free(indirect_ptr);
             inode_resize(disk_inode, original_length);
             return false;
           }
-          indirect_ptr->ptrs[j] = sector;
         }
         
         // Delete a data sector if the file is too large
