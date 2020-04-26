@@ -41,12 +41,19 @@ bytes_to_sectors (off_t size)
 /* In-memory inode. */
 struct inode {
     struct list_elem elem;              /* Element in inode list. */
-    struct lock l; 			                /* Acquire while changing inode  */
+    struct lock l; 			/* Acquire while changing inode  */
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;
+
+    size_t active_writers;
+    size_t active_readers;
+    size_t waiting_writers;
+    size_t waiting_readers;
+    struct condition ok_to_read;
+    struct condition ok_to_write;
 };
 
 struct indirect {
@@ -274,7 +281,7 @@ block_sector_t add_sector_to_file(struct inode_disk *disk_inode) {
     free(indirect_ptr);
     return 0;
   }
-
+  
   cache_write(indirect_ptr->ptrs[level2_position], zeros);
   block_sector_t result = indirect_ptr->ptrs[level2_position];
   free(doubly_indirect_ptr);
@@ -324,34 +331,30 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
       doubly_indirect_ptr->ptrs[i] = sector;
     }
 
+    if (doubly_indirect_ptr->ptrs[i] != 0) {
+    
+      cache_read(doubly_indirect_ptr->ptrs[i], indirect_ptr);
     // Loop through the level 2 pointers
-    for (int j = 0; j < NUM_POINTERS; j++) {
-      
-      // If this level 1 pointer is valid, read it into memory. Else, exit the nested loop.
-      if (doubly_indirect_ptr->ptrs[i] != 0) {
-        cache_read(doubly_indirect_ptr->ptrs[i], indirect_ptr);
-      } else {
-        break;
-      }
-
-      // Allocate a data sector if we need one
-      if (size > i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] == 0) {
-        block_sector_t sector = add_sector_to_file(disk_inode);
-        if (sector == 0) {
-          free(doubly_indirect_ptr);
-          free(indirect_ptr);
-          inode_resize(disk_inode, original_length);
-          return false;
+      for (int j = 0; j < NUM_POINTERS; j++) {        
+        // Allocate a data sector if we need one
+        if (size > i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] == 0) {
+          block_sector_t sector = add_sector_to_file(disk_inode);
+          if (sector == 0) {
+            free(doubly_indirect_ptr);
+            free(indirect_ptr);
+            inode_resize(disk_inode, original_length);
+            return false;
+          }
+          indirect_ptr->ptrs[j] = sector;
         }
-        indirect_ptr->ptrs[j] = sector;
+        
+        // Delete a data sector if the file is too large
+        if (size <= i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] != 0) {
+          free_map_release(indirect_ptr->ptrs[j], 1);
+          indirect_ptr->ptrs[j] = 0;
+        }
+        
       }
-      
-      // Delete a data sector if the file is too large
-      if (size <= i * (BLOCK_SECTOR_SIZE * NUM_POINTERS) + j * (BLOCK_SECTOR_SIZE) && indirect_ptr->ptrs[j] != 0) {
-        free_map_release(indirect_ptr->ptrs[j], 1);
-        indirect_ptr->ptrs[j] = 0;
-      }
-      
       // Commit the singly indirect pointer into disk
       cache_write(doubly_indirect_ptr->ptrs[i], indirect_ptr);
     }
@@ -454,6 +457,13 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  
+  inode->active_writers = 0;
+  inode->active_readers = 0;
+  inode->waiting_writers = 0;
+  inode->waiting_readers = 0;
+  cond_init(&(inode->ok_to_read));
+  cond_init(&(inode->ok_to_write));
   lock_init(&(inode->l));
   cache_read (inode->sector, &inode->data);
   return inode;
@@ -464,9 +474,9 @@ struct inode *
 inode_reopen (struct inode *inode)
 {
   if (inode != NULL) {
-    lock_acquire(&(inode->l));
+    writer_checkin(inode);
     inode->open_cnt++;
-    lock_release(&(inode->l));
+    writer_checkout(inode);
   }
   return inode;
 }
@@ -496,7 +506,7 @@ inode_close (struct inode *inode)
     return;
 
   /* Release resources if this was the last opener. */
-  lock_acquire(&(inode->l));
+  writer_checkin(inode);
   if (--inode->open_cnt == 0)
     {
       /* Remove from inode list and release lock. */
@@ -510,10 +520,10 @@ inode_close (struct inode *inode)
           free_all_data_sectors(inode);
           free_map_release (inode->sector, 1);
         }
-      lock_release(&(inode->l)); // Kinda redundant since we free anyway
+      writer_checkout(inode); // Kinda redundant since we free anyway
       free (inode);
     } else {
-      lock_release(&(inode->l));
+      writer_checkout(inode);
     }
 }
 
@@ -522,10 +532,10 @@ inode_close (struct inode *inode)
 void
 inode_remove (struct inode *inode)
 {
-  lock_acquire(&(inode->l));
+  writer_checkin(inode);
   ASSERT (inode != NULL);
   inode->removed = true;
-  lock_release(&(inode->l));
+  writer_checkout(inode);
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -536,6 +546,8 @@ inode_read_at (struct inode *inode, void *buffer_, size_t size, size_t offset)
 {
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
+
+  reader_checkin(inode);
 
   while (size > 0)
     {
@@ -560,6 +572,8 @@ inode_read_at (struct inode *inode, void *buffer_, size_t size, size_t offset)
       offset += chunk_size;
       bytes_read += chunk_size;
     }
+    
+  reader_checkout(inode);
 
   return bytes_read;
 }
@@ -580,11 +594,10 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
   off_t bytes_written = 0;
   struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
 
-  if (!lock_held_by_current_thread (&(inode->l)))
-    lock_acquire(&(inode->l));
+  writer_checkin(inode);
 
   if (inode->deny_write_cnt) {
-    lock_release(&(inode->l));
+    writer_checkout(inode);
     free(disk_inode);
     return 0;
   }
@@ -592,16 +605,15 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
   if (inode_length(inode) < size + offset) {
       cache_read(inode->sector, disk_inode);
       if (!inode_resize(disk_inode, size + offset)) {
-        lock_release(&(inode->l));
+        writer_checkout(inode);
         free(disk_inode);
         return 0;
       }
       cache_write(inode->sector, disk_inode);
   }
-  lock_release(&(inode->l));
-  
-  
-  
+
+  writer_checkout(inode);
+  reader_checkin(inode);
 
   while (size > 0)
     {
@@ -627,6 +639,8 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
       offset += chunk_size;
       bytes_written += chunk_size;
     }
+  reader_checkout(inode);
+
   free(disk_inode);
   return bytes_written;
 }
@@ -636,10 +650,10 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
 void
 inode_deny_write (struct inode *inode)
 { 
-  lock_acquire(&(inode->l));
+  writer_checkin(inode);
   inode->deny_write_cnt++;
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
-  lock_release(&(inode->l));
+  writer_checkout(inode);
 }
 
 /* Re-enables writes to INODE.
@@ -648,11 +662,11 @@ inode_deny_write (struct inode *inode)
 void
 inode_allow_write (struct inode *inode)
 {
-  lock_acquire(&(inode->l));
+  writer_checkin(inode);
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
-  lock_release(&(inode->l));
+  writer_checkout(inode);
 }
 
 /* Returns the length, in bytes, of INODE's data. */
@@ -665,3 +679,45 @@ inode_length (const struct inode *inode)
   free(disk_inode);
   return result;
 }
+
+void reader_checkin(struct inode *inode) {
+  lock_acquire(&(inode->l));
+  while (inode->active_writers + inode->waiting_writers > 0) {
+    inode->waiting_readers++;
+    cond_wait(&(inode->ok_to_read), &(inode->l));
+    inode->waiting_readers--;
+  }
+  inode->active_readers++;
+  lock_release(&(inode->l));
+};
+
+void reader_checkout(struct inode *inode) {
+  lock_acquire(&(inode->l));
+  inode->active_readers--;
+  if (inode->active_readers == 0 && inode->waiting_writers > 0) {
+    cond_signal(&(inode->ok_to_write), &(inode->l));
+  }
+  lock_release(&(inode->l));
+};
+
+void writer_checkin(struct inode *inode) {
+  lock_acquire(&(inode->l));
+  while (inode->active_writers + inode->active_readers > 0) {
+    inode->waiting_writers++;
+    cond_wait(&(inode->ok_to_write), &(inode->l));
+    inode->waiting_writers--;
+  }
+  inode->active_writers++;
+  lock_release(&(inode->l));
+};
+
+void writer_checkout(struct inode *inode) {
+  lock_acquire(&(inode->l));
+  inode->active_writers--;
+  if (inode->waiting_writers > 0) {
+    cond_signal(&(inode->ok_to_write), &(inode->l));
+  } else if (inode->waiting_readers > 0) {
+    cond_broadcast(&(inode->ok_to_read), &(inode->l));
+  }
+  lock_release(&(inode->l));
+};
