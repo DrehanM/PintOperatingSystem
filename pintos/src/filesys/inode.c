@@ -546,10 +546,9 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
     return 0;
   }
 
-  reader_checkout(inode);
-
-  writer_checkin(inode);
   if (inode_length(inode) < size + offset) {
+      reader_checkout(inode);
+      writer_checkin(inode);
       is_extension = true;
       cache_read(inode->sector, disk_inode);
       if (!inode_resize(disk_inode, size + offset)) {
@@ -558,9 +557,6 @@ inode_write_at (struct inode *inode, const void *buffer_, size_t size,
         return 0;
       }
       cache_write(inode->sector, disk_inode);
-  } else {
-    writer_checkout(inode);
-    reader_checkin(inode);
   }
 
   while (size > 0)
@@ -634,7 +630,8 @@ inode_length (const struct inode *inode)
 }
 
 /* Called when a process wants to read inode data.
- * Required to checkin for the entirety of inode_read_at call */
+ * Required to checkin for the entirety of inode_read_at call
+ * Required to checkin for inode_write_at loop if not an extension. */
 void reader_checkin(struct inode *inode) {
   lock_acquire(&(inode->l));
   while (inode->active_writers + inode->waiting_writers > 0) {
@@ -655,7 +652,7 @@ void reader_checkout(struct inode *inode) {
   lock_release(&(inode->l));
 };
 
-/* Called when process wants to edit inode data. */
+/* Called when process wants to edit inode data or extend the file. */
 void writer_checkin(struct inode *inode) {
   lock_acquire(&(inode->l));
   while (inode->active_writers + inode->active_readers > 0) {
