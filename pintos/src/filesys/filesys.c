@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "threads/thread.h"
+#include "userprog/syscall.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -74,8 +75,8 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
    otherwise.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-struct file *
-filesys_open (const char *name)
+void
+filesys_open (const char *name, struct thread_fd *fd_element)
 {
   struct dir *dir = dir_open_root ();
   struct inode *inode = NULL;
@@ -113,7 +114,8 @@ do_format (void)
   printf ("done.\n");
 }
 
-/* Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
+/* Provided by CS162 staff.
+Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
 next call will return the next file name part. Returns 1 if successful, 0 at
 end of string, -1 for a too-long file name part. */
 static int
@@ -139,13 +141,34 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
   return 1;
 }
 
-/* Unfinished */
-bool verify_filepath(const char *fp) {
-  struct dir *top_dir = thread_current()->cwd;
+/* Verify the validity of the file path and place the target inode in INODE and enclosing dir in DIR.
+   Return true on success. */
+bool 
+verify_filepath (char *fp, struct dir *dir, struct inode *inode) {
+  dir = dir_open(dir_get_inode(thread_current()->cwd));
   if (fp[0] == '/') {
-    top_dir = dir_open_root();
+    dir_close(dir);
+    dir = dir_open_root();
   }
 
+  char name[NAME_MAX + 1];
+  while (get_next_part(name, &fp)) {
+    if (dir_lookup(dir, name, &inode)) {
+      if (is_dir(inode)) {
+        dir_close(dir);
+        dir = dir_open(inode);
+      } else {
+        if (get_next_part(name, &fp) == 1)
+          return false;  //Error if we path doesn't end but we found a non-dir inode with the same name
+        break;  // Break if found the inode
+      }
+    } else {
+      dir_close(dir);
+      return false; //Error if a name does not exist in the path
+    }
+  }
+
+  return true;
 }
 
 
