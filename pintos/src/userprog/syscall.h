@@ -6,6 +6,7 @@
 typedef struct thread_fd {
     int fd;
     struct file *f;
+    struct dir *d;
     struct list_elem elem;
 } thread_fd_t;
 

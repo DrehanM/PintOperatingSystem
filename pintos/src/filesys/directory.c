@@ -6,6 +6,11 @@
 #include "filesys/inode.h"
 #include "threads/malloc.h"
 
+
+#define PARENT_NAME ".."
+#define SELF_NAME "."
+
+bool change_parent_dir(struct dir *dir, block_sector_t parent_sector);
 /* A directory. */
 struct dir
   {
@@ -26,7 +31,11 @@ struct dir_entry
 bool
 dir_create (block_sector_t sector, size_t entry_cnt)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  if (inode_create_dir (sector, (entry_cnt + 2) * sizeof (struct dir_entry))) {
+    struct dir *dir = dir_open(inode_open(sector));
+    return dir_add(dir, SELF_NAME, sector);
+  }
+  return false;
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -139,7 +148,7 @@ dir_lookup (const struct dir *dir, const char *name,
    Fails if NAME is invalid (i.e. too long) or a disk or memory
    error occurs. */
 bool
-dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
+dir_add (struct dir *dir, const char *name, block_sector_t sector)
 {
   struct dir_entry e;
   off_t ofs;
@@ -171,8 +180,19 @@ dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
-  e.inode_sector = inode_sector;
+  e.inode_sector = sector;
+
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+
+  /* Change the old parent directory entry to match the new one */
+  if (success && inode_sector(dir->inode) != sector) {  // if this is not a dir_add to add self to dir
+    struct inode *child = inode_open(inode_sector);
+    if (child && is_dir(child)) {
+      struct dir *child_dir = dir_open(child);
+      success = change_parent_dir(child_dir, inode_sector(dir->inode));
+    }
+    inode_close(child);
+  }
 
  done:
   return success;
@@ -233,4 +253,22 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
         }
     }
   return false;
+}
+
+bool
+change_parent_dir(struct dir *dir, block_sector_t parent_sector) {
+  struct dir_entry e;
+  off_t ofs;
+  bool success = false;
+
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+       ofs += sizeof e)
+    if (strcmp(e.name, PARENT_NAME))
+      break;
+
+  e.inode_sector = parent_sector;
+
+  success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+
+  return success;
 }

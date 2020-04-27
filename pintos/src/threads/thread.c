@@ -215,6 +215,9 @@ thread_create (const char *name, int priority,
   /* Initialize wait status */
   init_wait_status(&t->wait_status, t->tid);
 
+  /* Inherit parent's cwd */
+  t->cwd = thread_current()->cwd;
+
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;

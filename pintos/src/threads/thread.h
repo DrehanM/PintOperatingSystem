@@ -115,6 +115,9 @@ struct thread
     /* Keeps track of the executable of this thread. */
     struct file *executable;
 
+    /* Thread's current working directory */
+    struct dir *cwd;
+
     struct list fd_map;
 
 #ifdef USERPROG

@@ -24,10 +24,11 @@ static struct lock open_inodes_lock;
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk {
+    bool isdir;
     block_sector_t indirect_ptr_idx;    /* Sector index of indirect pointer. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    uint32_t unused[124];               /* Not used. */
 };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -41,7 +42,8 @@ bytes_to_sectors (off_t size)
 /* In-memory inode. */
 struct inode {
     struct list_elem elem;              /* Element in inode list. */
-    struct lock l; 			/* Acquire while changing inode  */
+    struct lock l; 			                /* Acquire while changing inode  */
+    struct lock dir_lock;
     block_sector_t sector;              /* Sector number of disk location. */
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
@@ -361,6 +363,19 @@ inode_create (block_sector_t sector, off_t length)
   return success;
 }
 
+bool
+inode_create_dir (block_sector_t sector, off_t length) {
+  struct inode_disk *disk_inode = calloc(1, sizeof(struct inode_disk));
+  bool success = inode_create (sector, length);
+  if (success) {
+    cache_read(sector, disk_inode);
+    disk_inode->isdir = true;
+    cache_write(sector, disk_inode);
+  }
+  free(disk_inode);
+  return success;
+}
+
 /* Reads an inode from SECTOR
    and returns a `struct inode' that contains it.
    Returns a null pointer if memory allocation fails. */
@@ -406,6 +421,7 @@ inode_open (block_sector_t sector)
   cond_init(&(inode->ok_to_read));
   cond_init(&(inode->ok_to_write));
   lock_init(&(inode->l));
+  lock_init(&(inode->dir_lock));
   return inode;
 }
 
@@ -627,6 +643,22 @@ inode_length (const struct inode *inode)
   size_t result = disk_inode->length;
   free(disk_inode);
   return result;
+}
+
+/* Returns true is the inode corresponds to a directory. */
+bool
+is_dir(struct inode *inode)
+{
+  struct inode_disk *disk_inode = calloc(1, sizeof (struct inode_disk));
+  cache_read(inode->sector, disk_inode);
+  bool result = disk_inode->isdir;
+  free(disk_inode);
+  return result;
+}
+
+block_sector_t
+inode_sector(struct inode *inode) {
+  return inode->sector;
 }
 
 /* Called when a process wants to read inode data.
