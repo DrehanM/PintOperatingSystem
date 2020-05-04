@@ -4,6 +4,7 @@
 #include <list.h>
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
+#include "threads/thread.h"
 #include "threads/malloc.h"
 
 
@@ -29,7 +30,7 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, size_t entry_cnt)
+ dir_create (block_sector_t sector, size_t entry_cnt)
 {
   if (inode_create_dir (sector, (entry_cnt + 2) * sizeof (struct dir_entry))) {
     struct dir *dir = dir_open(inode_open(sector));
@@ -157,12 +158,20 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  char newname[NAME_MAX + 1];
+  memset(newname, 0, NAME_MAX + 1);
+  struct inode *inode;
+  bool correct_name = get_name_set_dir(name, dir, &inode, newname);
+
+  if (!correct_name) {
+    return false;
+  }
   /* Check NAME for validity. */
-  if (*name == '\0' || strlen (name) > NAME_MAX)
+  if (*newname == '\0' || strlen (newname) > NAME_MAX)
     return false;
 
   /* Check that NAME is not in use. */
-  if (lookup (dir, name, NULL, NULL))
+  if (lookup (dir, newname, NULL, NULL))
     goto done;
 
   /* Set OFS to offset of free slot.
@@ -179,7 +188,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 
   /* Write slot. */
   e.in_use = true;
-  strlcpy (e.name, name, sizeof e.name);
+  strlcpy (e.name, newname, sizeof e.name);
   e.inode_sector = sector;
 
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
@@ -196,6 +205,19 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 
  done:
   return success;
+}
+
+bool chdir(char *name) {
+  struct dir *dir = thread_current()->cwd;
+  struct inode *inode;
+
+  bool success = verify_filepath(name, dir, &inode);
+
+  if (success) {
+    thread_current()->cwd = dir_open(inode);
+    return true;
+  }
+  return false;
 }
 
 /* Removes any entry for NAME in DIR.
@@ -246,7 +268,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
-      if (e.in_use)
+      if (e.in_use && !strcmp(e.name, SELF_NAME) && !strcmp(e.name, PARENT_NAME))
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           return true;
@@ -276,3 +298,32 @@ change_parent_dir(struct dir *dir, block_sector_t parent_sector) {
 int dir_inumber(struct dir *dir) {
   return inode_sector(dir->inode);
 } 
+
+/* Handles relative and absolute name references for files inside dir by just returning the relative name of the file with respect to dir. Sets dir to the correct dir in which the file is being created.  */
+bool get_name_set_dir (char *fp, struct dir *dir, struct inode **inode, char* newname) {
+  if (fp[0] == '/') { //absolute path name
+    dir_close(dir);
+    dir = dir_open_root();
+  }
+  char name[NAME_MAX + 1];
+  memset(name, 0, NAME_MAX + 1);
+  while (get_next_part(name, &fp)) {
+    bool success = dir_lookup(dir, name, inode);
+    if (success) { //found file with name in dir
+      if (is_dir(*inode)) {
+        dir_close(dir);
+        dir = dir_open(*inode);
+      } else { //file is not a directory. You cannot create a file with a duplicated name. 
+        return false;
+      }
+    } else { //did not find file with name in dir
+      if (get_next_part(name, &fp) == 0) { //There is nothing in the path after the file name.
+          strlcpy(newname, name, sizeof(name));
+          return true; //return correct name of new file
+        }   
+      return false; //Incorrect path
+    }
+  }
+  strlcpy(newname, fp, strlen(fp));
+  return true;
+}

@@ -119,11 +119,11 @@ syscall_init (void)
 }
 
 static int
-create(const char * file, unsigned initial_size){
+create(const char * file, unsigned initial_size, bool isdir){
   if (!is_valid_file(file)) {
     exit_file_call(-1);
   }
-  return filesys_create(file, initial_size, false);
+  return filesys_create(file, initial_size, isdir);
 }
 
 static bool
@@ -245,7 +245,7 @@ file_operation_handler(struct intr_frame *f) {
       if (!is_valid_args(args, 3)) {
         exit_file_call(-1);
       }
-      f->eax = create((char *) args[1], (unsigned int) args[2]);
+      f->eax = create((char *) args[1], (unsigned int) args[2], false);
       break;                /* Create a file. */
     case SYS_REMOVE:
       if (!is_valid_args(args, 2)) {
@@ -279,7 +279,6 @@ file_operation_handler(struct intr_frame *f) {
       if (!is_valid_args(args, 4)) {
         exit_file_call(-1);
       }
-
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
@@ -318,13 +317,26 @@ file_operation_handler(struct intr_frame *f) {
     }
 
     case SYS_CHDIR: {
-
+      if (!is_valid_args(args, 2)) {
+        exit_file_call(-1);
+      }
+      char *newdirname = args[1];
+      f->eax = chdir(newdirname);
       break;
     }                  /* Change the current directory. */
     case SYS_MKDIR: {
+      if (!is_valid_args(args, 2)) {
+        exit_file_call(-1);
+      }
+      f->eax = create((char *) args[1], 16, true);
       break;
     }                 /* Create a directory. */
     case SYS_READDIR: {
+      if (!is_valid_args(args, 3)) {
+        exit_file_call(-1);
+      }
+      struct dir *dir = get_dir_from_fd((int) args[1]);
+      f->eax = dir_readdir(dir, (char *) args[2]);
       break;
     }                /* Reads a directory entry. */
     case SYS_ISDIR: {

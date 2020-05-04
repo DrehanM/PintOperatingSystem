@@ -49,14 +49,19 @@ bool
 filesys_create (const char *name, off_t initial_size, bool isdir)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
+  struct dir *dir;
+  if (thread_current()->cwd != NULL) {
+    dir = dir_open(dir_get_inode(thread_current()->cwd));
+  } else {
+    dir = dir_open_root();
+  }
   bool success;
 
   if (isdir) {
     success = (dir != NULL
             && free_map_allocate (1, &inode_sector)
-            && inode_create (inode_sector, initial_size)
-            && dir_add (dir, name, inode_sector));
+            && dir_create (inode_sector, initial_size)
+            && dir_add(dir, name, inode_sector));
   } else {
   success = (dir != NULL
             && free_map_allocate (1, &inode_sector)
@@ -128,8 +133,7 @@ do_format (void)
 Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
 next call will return the next file name part. Returns 1 if successful, 0 at
 end of string, -1 for a too-long file name part. */
-static int
-get_next_part (char part[NAME_MAX + 1], const char **srcp) {
+int get_next_part (char part[NAME_MAX + 1], const char **srcp) {
   const char *src = *srcp;
   char *dst = part;
   /* Skip leading slashes. If it’s all slashes, we’re done. */
