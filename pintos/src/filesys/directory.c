@@ -272,3 +272,7 @@ change_parent_dir(struct dir *dir, block_sector_t parent_sector) {
 
   return success;
 }
+
+int dir_inumber(struct dir *dir) {
+  return inode_sector(dir->inode);
+} 

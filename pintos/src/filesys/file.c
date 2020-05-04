@@ -166,3 +166,7 @@ file_tell (struct file *file)
   ASSERT (file != NULL);
   return file->pos;
 }
+
+int file_inumber(struct file *file) {
+  return inode_sector(file->inode);
+}

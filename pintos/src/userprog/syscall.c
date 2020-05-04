@@ -137,13 +137,18 @@ open(const char * file) {
     exit_file_call(-1);
   }
 
-  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
-  fd->fd = fd_count;
-
   bool isdirbool = false;
   void *retval;
 
   retval = filesys_open(file, &isdirbool);
+
+  if (retval == NULL) {
+    return -1;
+  }
+
+  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
+  fd->fd = fd_count;
+
   if (isdirbool)
     fd->d = (struct dir *) retval;
   else
@@ -214,6 +219,19 @@ isdir(int fd) {
   return dir_ != NULL;
 }
 
+static int inumber(int fd) {
+  struct dir *dir_ = get_dir_from_fd(fd);
+  if (dir_ != NULL) {
+    return dir_inumber(dir_);
+  }
+  struct file *file_ = get_file_from_fd(fd);
+  if (file_ != NULL) {
+    return file_inumber(file_);
+  }
+  return -1;
+}
+
+
 void
 close_thread_fd(thread_fd_t *fd) {
   close(fd->fd);
@@ -222,10 +240,7 @@ close_thread_fd(thread_fd_t *fd) {
 static void
 file_operation_handler(struct intr_frame *f) {
   uint32_t* args = ((uint32_t*) f->esp);
-  //lock_acquire(&global_file_lock);
   switch (args[0]) {
-    // LUKE AND CHRIS
-
     case SYS_CREATE:
       if (!is_valid_args(args, 3)) {
         exit_file_call(-1);
@@ -250,9 +265,6 @@ file_operation_handler(struct intr_frame *f) {
       }
       f->eax = filesize((int) args[1]);
       break;               /* Obtain a file's size. */
-
-    // BEN AND DIEGO
-
     case SYS_READ: {
       if (!is_valid_args(args, 4)) {
         exit_file_call(-1);
@@ -324,11 +336,14 @@ file_operation_handler(struct intr_frame *f) {
       break;
     }                 /* Tests if a fd represents a directory. */
     case SYS_INUMBER: {
-
+      if (!is_valid_args(args, 2)) {
+        exit_file_call(-1);
+      }
+      int fd = args[1];
+      f->eax = inumber(fd);
       break;
     }
   }
-  //lock_release(&global_file_lock);
 }
 
 static void

@@ -155,6 +155,9 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
    Return true on success. */
 bool 
 verify_filepath (const char *fp, struct dir *dir, struct inode **inode) {
+  if (strcmp(fp, "") == 0) {
+    return false;
+  }
   if (dir == NULL) {
     thread_current()->cwd = dir_open_root();
     dir = thread_current()->cwd;
