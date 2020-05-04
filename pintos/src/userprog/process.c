@@ -466,7 +466,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open(file_name);
+
+  bool isdir = false;
+  file = (struct file *) filesys_open(file_name, &isdir);
 
   if (file == NULL)
     {

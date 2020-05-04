@@ -186,7 +186,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 
   /* Change the old parent directory entry to match the new one */
   if (success && inode_sector(dir->inode) != sector) {  // if this is not a dir_add to add self to dir
-    struct inode *child = inode_open(inode_sector);
+    struct inode *child = inode_open(sector);
     if (child && is_dir(child)) {
       struct dir *child_dir = dir_open(child);
       success = change_parent_dir(child_dir, inode_sector(dir->inode));

@@ -75,17 +75,27 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
    otherwise.
    Fails if no file named NAME exists,
    or if an internal memory allocation fails. */
-void
-filesys_open (const char *name, struct thread_fd *fd_element)
+void *
+filesys_open (const char *name, bool *isdir)
 {
-  struct dir *dir = dir_open_root ();
-  struct inode *inode = NULL;
+  struct dir *dir;
+  struct inode *inode;
 
-  if (dir != NULL)
-    dir_lookup (dir, name, &inode);
+  bool success = verify_filepath(name, dir, &inode);
+
+  if (!success) {
+    return NULL;
+  }
+
   dir_close (dir);
 
-  return file_open (inode);
+  if (is_dir(inode)) {
+    *isdir = true;
+    return dir_open(inode);
+  } else {
+    *isdir = false;
+    return file_open(inode);
+  }
 }
 
 /* Deletes the file named NAME.
@@ -144,22 +154,31 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
 /* Verify the validity of the file path and place the target inode in INODE and enclosing dir in DIR.
    Return true on success. */
 bool 
-verify_filepath (char *fp, struct dir *dir, struct inode *inode) {
-  dir = dir_open(dir_get_inode(thread_current()->cwd));
+verify_filepath (const char *fp, struct dir *dir, struct inode **inode) {
+  if (dir == NULL) {
+    thread_current()->cwd = dir_open_root();
+    dir = thread_current()->cwd;
+  } else {
+    dir = dir_open(dir_get_inode(thread_current()->cwd));
+  }
   if (fp[0] == '/') {
     dir_close(dir);
     dir = dir_open_root();
   }
 
   char name[NAME_MAX + 1];
+  memset(name, 0, NAME_MAX + 1);
   while (get_next_part(name, &fp)) {
-    if (dir_lookup(dir, name, &inode)) {
-      if (is_dir(inode)) {
+    bool success = dir_lookup(dir, name, inode);
+    if (success) {
+      if (is_dir(*inode)) {
         dir_close(dir);
-        dir = dir_open(inode);
+        dir = dir_open(*inode);
       } else {
-        if (get_next_part(name, &fp) == 1)
+        if (get_next_part(name, &fp) == 1) {
+          dir_close(dir);
           return false;  //Error if we path doesn't end but we found a non-dir inode with the same name
+        }   
         break;  // Break if found the inode
       }
     } else {

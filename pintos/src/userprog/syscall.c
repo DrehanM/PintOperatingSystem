@@ -75,6 +75,25 @@ get_file_from_fd(int fd) {
   return returned_file;
 }
 
+/* Same thing as abive but for dir.
+   Made this so we don't have to change every call for get_file_from_fd */
+static struct dir *
+get_dir_from_fd(int fd) {
+  struct thread *t = thread_current();
+  struct list *l = &t->fd_map;
+  struct dir *returned_dir = NULL;
+
+  thread_fd_t *w;
+  for (struct list_elem *e = list_begin(l); e->next != NULL; e = e->next) {
+    w = list_entry(e, thread_fd_t, elem);
+    if (w->fd == fd) {
+      returned_dir = w->d;
+      break;
+    }
+  }
+  return returned_dir;
+}
+
 static void
 remove_file(int fd) {
   struct thread *t = thread_current();
@@ -117,18 +136,19 @@ open(const char * file) {
   if (!is_valid_file(file)) {
     exit_file_call(-1);
   }
-  struct file *f = filesys_open(file);
-  if (f == NULL) {
-    return -1;
-  }
-  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
-  if (fd == NULL) {
-    file_close(f);
-    return -1;
-  }
 
+  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
   fd->fd = fd_count;
-  fd->f = f;
+
+  bool isdirbool = false;
+  void *retval;
+
+  retval = filesys_open(file, &isdirbool);
+  if (isdirbool)
+    fd->d = (struct dir *) retval;
+  else
+    fd->f = (struct file *) retval;
+  
   struct thread *t = thread_current();
   struct list *l = &thread_current()->fd_map;
   list_push_front(l, &fd->elem);
@@ -186,6 +206,12 @@ close(int fd) {
   struct file *file_ = get_file_from_fd(fd);
   file_close(file_);
   remove_file(fd);
+}
+
+static bool
+isdir(int fd) {
+  struct dir *dir_ = get_dir_from_fd(fd);
+  return dir_ != NULL;
 }
 
 void
@@ -276,6 +302,29 @@ file_operation_handler(struct intr_frame *f) {
       }
       int fd = args[1];
       close(fd);
+      break;
+    }
+
+    case SYS_CHDIR: {
+
+      break;
+    }                  /* Change the current directory. */
+    case SYS_MKDIR: {
+      break;
+    }                 /* Create a directory. */
+    case SYS_READDIR: {
+      break;
+    }                /* Reads a directory entry. */
+    case SYS_ISDIR: {
+       if (!is_valid_args(args, 2)) {
+        exit_file_call(-1);
+      }
+      int fd = args[1];
+      f->eax = isdir(fd);
+      break;
+    }                 /* Tests if a fd represents a directory. */
+    case SYS_INUMBER: {
+
       break;
     }
   }

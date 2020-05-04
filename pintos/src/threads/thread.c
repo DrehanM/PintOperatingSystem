@@ -15,6 +15,7 @@
 #include "list.h"
 #include "userprog/syscall.h"
 #include "../filesys/file.h"
+#include "../filesys/directory.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -216,7 +217,11 @@ thread_create (const char *name, int priority,
   init_wait_status(&t->wait_status, t->tid);
 
   /* Inherit parent's cwd */
-  t->cwd = thread_current()->cwd;
+  t->cwd = calloc(1, sizeof(struct dir *));
+
+  if (thread_current()->cwd != NULL)
+    memcpy(t->cwd, thread_current()->cwd, sizeof(thread_current()->cwd));
+  
 
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
