@@ -83,7 +83,7 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
 void *
 filesys_open (const char *name, bool *isdir)
 {
-  struct dir *dir;
+  struct dir *dir = thread_current()->cwd;
   struct inode *inode;
 
   bool success = verify_filepath(name, dir, &inode);
