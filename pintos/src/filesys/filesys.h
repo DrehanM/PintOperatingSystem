@@ -21,6 +21,8 @@ bool filesys_create (const char *name, off_t initial_size, bool isdir);
 void *filesys_open (const char *name, bool *isdir);
 bool filesys_remove (const char *name);
 int get_next_part (char part[NAME_MAX + 1], const char **srcp);
+struct dir *get_last_dir(const char *fp);
+bool get_filename_from_path(const char *fp, char name[NAME_MAX + 1]);
 bool verify_filepath (const char *fp, struct dir *dir, struct inode **inode);
 
 #endif /* filesys/filesys.h */

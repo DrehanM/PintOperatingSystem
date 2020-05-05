@@ -28,7 +28,6 @@ bool dir_add (struct dir *, const char *name, block_sector_t);
 bool dir_remove (struct dir *, const char *name);
 bool dir_readdir (struct dir *, char name[NAME_MAX + 1]);
 int dir_inumber(struct dir *dir);
-bool get_name_set_dir (char *fp, struct dir *dir, struct inode **inode, char* newname);
 bool chdir(char *name);
 bool set_dir(char * dirname, struct dir *dir);
 

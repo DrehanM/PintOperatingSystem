@@ -4,9 +4,28 @@
 #include <stdbool.h>
 #include "filesys/off_t.h"
 #include "devices/block.h"
+#include <list.h>
+#include "threads/synch.h"
 
 struct bitmap;
 
+/* In-memory inode. */
+struct inode {
+    struct list_elem elem;              /* Element in inode list. */
+    struct lock l; 			                /* Acquire while changing inode  */
+    struct lock dir_lock;
+    block_sector_t sector;              /* Sector number of disk location. */
+    int open_cnt;                       /* Number of openers. */
+    bool removed;                       /* True if deleted, false otherwise. */
+    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+
+    size_t active_writers;
+    size_t active_readers;
+    size_t waiting_writers;
+    size_t waiting_readers;
+    struct condition ok_to_read;
+    struct condition ok_to_write;
+};
 
 void inode_init (void);
 bool inode_create (block_sector_t, off_t);

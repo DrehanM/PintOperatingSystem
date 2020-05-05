@@ -31,8 +31,11 @@ free_map_init (void)
 bool
 free_map_allocate (size_t cnt, block_sector_t *sectorp)
 { 
-  if (!lock_held_by_current_thread(&free_map_lock))
+  bool release_lock = false;
+  if (!lock_held_by_current_thread(&free_map_lock)) {
     lock_acquire(&free_map_lock);
+    release_lock = true;
+  }
   block_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
   /*if (sector != BITMAP_ERROR
       && free_map_file != NULL)
@@ -41,9 +44,14 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
       bitmap_set_multiple (free_map, sector, cnt, false);
       sector = BITMAP_ERROR;
     } */
-  if (sector != BITMAP_ERROR)
+  if (sector != BITMAP_ERROR) {
     *sectorp = sector;
-  lock_release(&free_map_lock);
+  }
+
+  if (release_lock) {
+    lock_release(&free_map_lock);
+  }
+
   return sector != BITMAP_ERROR;
 }
 
@@ -63,20 +71,27 @@ free_map_release (block_sector_t sector, size_t cnt)
 void
 free_map_open (void)
 {
+  lock_acquire(&free_map_lock);
   free_map_file = file_open (inode_open (FREE_MAP_SECTOR));
+
   if (free_map_file == NULL)
     PANIC ("can't open free map");
   if (!bitmap_read (free_map, free_map_file))
     PANIC ("can't read free map");
+
+  lock_release(&free_map_lock);
 }
+
 
 /* Writes the free map to disk and closes the free map file. */
 void
 free_map_close (void)
 { 
+  lock_acquire(&free_map_lock);
   if (!bitmap_write (free_map, free_map_file))
     PANIC ("can't write free map");
   file_close (free_map_file);
+  lock_release(&free_map_lock);
 }
 
 /* Creates a new free map file on disk and writes the free map to
@@ -84,14 +99,21 @@ free_map_close (void)
 void
 free_map_create (void)
 {
+  lock_acquire(&free_map_lock);
+
   /* Create inode. */
   if (!inode_create (FREE_MAP_SECTOR, bitmap_file_size (free_map)))
     PANIC ("free map creation failed");
 
   /* Write bitmap to file. */
   free_map_file = file_open (inode_open (FREE_MAP_SECTOR));
-  if (free_map_file == NULL)
+  if (free_map_file == NULL) {
     PANIC ("can't open free map");
-  if (!bitmap_write (free_map, free_map_file))
+  }
+  
+  if (!bitmap_write (free_map, free_map_file)) {
     PANIC ("can't write free map");
+  }
+
+  lock_release(&free_map_lock);
 }

@@ -134,11 +134,11 @@ dir_lookup (const struct dir *dir, const char *name,
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
-  if (lookup (dir, name, &e, NULL))
+  if (lookup (dir, name, &e, NULL)) {
     *inode = inode_open (e.inode_sector);
-  else
+  } else {
     *inode = NULL;
-
+  }
   return *inode != NULL;
 }
 
@@ -161,17 +161,10 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
   char newname[NAME_MAX + 1];
   memset(newname, 0, NAME_MAX + 1);
   struct inode *inode;
-  bool correct_name = get_name_set_dir(name, dir, &inode, newname);
 
-  if (!correct_name) {
-    return false;
-  }
-  /* Check NAME for validity. */
-  if (*newname == '\0' || strlen (newname) > NAME_MAX)
-    return false;
 
   /* Check that NAME is not in use. */
-  if (lookup (dir, newname, NULL, NULL))
+  if (lookup (dir, name, NULL, NULL))
     goto done;
 
   /* Set OFS to offset of free slot.
@@ -188,7 +181,7 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 
   /* Write slot. */
   e.in_use = true;
-  strlcpy (e.name, newname, sizeof e.name);
+  strlcpy (e.name, name, sizeof e.name);
   e.inode_sector = sector;
 
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
@@ -298,32 +291,3 @@ change_parent_dir(struct dir *dir, block_sector_t parent_sector) {
 int dir_inumber(struct dir *dir) {
   return inode_sector(dir->inode);
 } 
-
-/* Handles relative and absolute name references for files inside dir by just returning the relative name of the file with respect to dir. Sets dir to the correct dir in which the file is being created.  */
-bool get_name_set_dir (char *fp, struct dir *dir, struct inode **inode, char* newname) {
-  if (fp[0] == '/') { //absolute path name
-    dir_close(dir);
-    dir = dir_open_root();
-  }
-  char name[NAME_MAX + 1];
-  memset(name, 0, NAME_MAX + 1);
-  while (get_next_part(name, &fp)) {
-    bool success = dir_lookup(dir, name, inode);
-    if (success) { //found file with name in dir
-      if (is_dir(*inode)) {
-        dir_close(dir);
-        dir = dir_open(*inode);
-      } else { //file is not a directory. You cannot create a file with a duplicated name. 
-        return false;
-      }
-    } else { //did not find file with name in dir
-      if (get_next_part(name, &fp) == 0) { //There is nothing in the path after the file name.
-          strlcpy(newname, name, sizeof(name));
-          return true; //return correct name of new file
-        }   
-      return false; //Incorrect path
-    }
-  }
-  strlcpy(newname, fp, strlen(fp));
-  return true;
-}

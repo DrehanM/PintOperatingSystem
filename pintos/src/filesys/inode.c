@@ -39,24 +39,6 @@ bytes_to_sectors (off_t size)
   return DIV_ROUND_UP (size, BLOCK_SECTOR_SIZE);
 }
 
-/* In-memory inode. */
-struct inode {
-    struct list_elem elem;              /* Element in inode list. */
-    struct lock l; 			                /* Acquire while changing inode  */
-    struct lock dir_lock;
-    block_sector_t sector;              /* Sector number of disk location. */
-    int open_cnt;                       /* Number of openers. */
-    bool removed;                       /* True if deleted, false otherwise. */
-    int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
-
-    size_t active_writers;
-    size_t active_readers;
-    size_t waiting_writers;
-    size_t waiting_readers;
-    struct condition ok_to_read;
-    struct condition ok_to_write;
-};
-
 struct indirect {
   block_sector_t ptrs[NUM_POINTERS];
 };
@@ -387,17 +369,23 @@ inode_open (block_sector_t sector)
 
   /* Check whether this inode is already open. */
   lock_acquire(&open_inodes_lock);
+
+
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e))
     {
+
       inode = list_entry (e, struct inode, elem);
       if (inode->sector == sector)
         {
           lock_release(&open_inodes_lock);
+
           inode_reopen (inode);
+
           return inode;
         }
     }
+
 
   /* Allocate memory. */
   inode = malloc (sizeof *inode);
@@ -406,7 +394,12 @@ inode_open (block_sector_t sector)
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
-  lock_release(&open_inodes_lock);
+
+  cond_init(&(inode->ok_to_read));
+  cond_init(&(inode->ok_to_write));
+  lock_init(&(inode->l));
+  lock_init(&(inode->dir_lock));
+
 
   inode->sector = sector;
   inode->open_cnt = 1;
@@ -418,10 +411,8 @@ inode_open (block_sector_t sector)
   inode->waiting_writers = 0;
   inode->waiting_readers = 0;
   
-  cond_init(&(inode->ok_to_read));
-  cond_init(&(inode->ok_to_write));
-  lock_init(&(inode->l));
-  lock_init(&(inode->dir_lock));
+  lock_release(&open_inodes_lock);
+
   return inode;
 }
 

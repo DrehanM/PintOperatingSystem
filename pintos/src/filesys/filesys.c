@@ -9,6 +9,7 @@
 #include "threads/thread.h"
 #include "userprog/syscall.h"
 
+
 /* Partition that contains the file system. */
 struct block *fs_device;
 
@@ -49,24 +50,24 @@ bool
 filesys_create (const char *name, off_t initial_size, bool isdir)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir;
-  if (thread_current()->cwd != NULL) {
-    dir = dir_open(dir_get_inode(thread_current()->cwd));
-  } else {
-    dir = dir_open_root();
-  }
-  bool success;
+  struct dir *dir = get_last_dir(name);
 
-  if (isdir) {
+  bool success;
+  char filename[NAME_MAX + 2];
+  if (!get_filename_from_path(name, filename)) { // filename is too large
+    return false;
+  }
+  
+  if (isdir) { 
     success = (dir != NULL
             && free_map_allocate (1, &inode_sector)
             && dir_create (inode_sector, initial_size)
-            && dir_add(dir, name, inode_sector));
+            && dir_add(dir, filename, inode_sector));
   } else {
   success = (dir != NULL
             && free_map_allocate (1, &inode_sector)
             && inode_create (inode_sector, initial_size)
-            && dir_add (dir, name, inode_sector));
+            && dir_add (dir, filename, inode_sector));
   }
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
@@ -83,10 +84,19 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
 void *
 filesys_open (const char *name, bool *isdir)
 {
-  struct dir *dir = thread_current()->cwd;
+  struct dir *dir;
   struct inode *inode;
 
-  bool success = verify_filepath(name, dir, &inode);
+  dir = get_last_dir(name);
+
+  if (dir == NULL) {
+    return NULL;
+  }
+
+  char filename[NAME_MAX + 1];
+  get_filename_from_path(name, filename);
+
+  bool success = dir_lookup(dir, filename, &inode);
 
   if (!success) {
     return NULL;
@@ -133,7 +143,8 @@ do_format (void)
 Extracts a file name part from *SRCP into PART, and updates *SRCP so that the
 next call will return the next file name part. Returns 1 if successful, 0 at
 end of string, -1 for a too-long file name part. */
-int get_next_part (char part[NAME_MAX + 1], const char **srcp) {
+int
+get_next_part (char part[NAME_MAX + 1], const char **srcp) {
   const char *src = *srcp;
   char *dst = part;
   /* Skip leading slashes. If it’s all slashes, we’re done. */
@@ -155,6 +166,67 @@ int get_next_part (char part[NAME_MAX + 1], const char **srcp) {
   return 1;
 }
 
+// Returns the last dir in the fp, or null if there is a problem
+struct dir 
+*get_last_dir(const char *fp) {
+  if (strcmp(fp, "") == 0) {
+    return NULL;
+  }
+
+  struct dir *dir;
+  if (fp[0] == '/') { // use absolute 
+    dir = dir_open_root();
+  } else { // use cwd
+    struct thread *t = thread_current();
+    if (t->cwd == NULL) {
+      t->cwd = dir_open_root();
+    } 
+    dir = dir_reopen(t->cwd);
+  }
+
+  char name[NAME_MAX + 1];
+  memset(name, 0, NAME_MAX + 1);
+  struct inode *inode;
+  while (get_next_part(name, &fp)) {
+    bool success = dir_lookup(dir, name, &inode);
+    if (!success) {  
+
+      if (get_next_part(name, &fp) != 1) { // we've gone to the last dir
+        return dir;
+      }
+      
+      dir_close(dir);
+      return NULL; // we can still go deeper into fp, missing a directory somewhere
+    } 
+    
+    if (!is_dir(inode)) {
+      if (get_next_part(name, &fp) == 0) { // gotten the last file, return dir
+        return dir;
+      }
+      dir_close(dir);
+      printf("not dir and not end\n");
+      return NULL;
+    }
+    dir = dir_open(inode);
+  }
+  return dir;
+}
+
+// fills name with the actual filename, returns false if the name is too long
+bool
+get_filename_from_path(const char *fp, char name[NAME_MAX + 2]) {
+  int next_part_status;
+  while (true) {
+    next_part_status = get_next_part(name, &fp);
+    if (next_part_status == 0) { // end of string
+      return true;
+    } else if (next_part_status == -1) { // filename too long
+      return false;
+    }
+  }
+  return false;
+}
+
 /* Verify the validity of the file path and place the target inode in INODE and enclosing dir in DIR.
    Return true on success. */
 bool 
@@ -162,6 +234,7 @@ verify_filepath (const char *fp, struct dir *dir, struct inode **inode) {
   if (strcmp(fp, "") == 0) {
     return false;
   }
+
   if (dir == NULL) {
     thread_current()->cwd = dir_open_root();
     dir = thread_current()->cwd;
