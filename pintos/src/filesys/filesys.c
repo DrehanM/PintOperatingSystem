@@ -174,6 +174,8 @@ struct dir
   }
 
   struct dir *dir;
+  struct dir *prev;
+
   if (fp[0] == '/') { // use absolute 
     dir = dir_open_root();
   } else { // use cwd
@@ -207,9 +209,10 @@ struct dir
       printf("not dir and not end\n");
       return NULL;
     }
+    prev = dir;
     dir = dir_open(inode);
   }
-  return dir;
+  return prev;
 }
 
 // fills name with the actual filename, returns false if the name is too long

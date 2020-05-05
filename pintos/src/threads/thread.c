@@ -216,15 +216,6 @@ thread_create (const char *name, int priority,
   /* Initialize wait status */
   init_wait_status(&t->wait_status, t->tid);
 
-  /* Inherit parent's cwd */
-
-  // if (priority == PRI_USER) {
-  //   if (thread_current()->cwd != NULL)
-  //     t->cwd = dir_open(dir_get_inode(thread_current()->cwd));
-  //   else 
-  //     t->cwd = dir_open_root();
-  // }
-
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
@@ -317,12 +308,14 @@ destroy_thread_fd(void)
   struct list *l = &t->fd_map;
   thread_fd_t *w;
 
-  struct file *returned_file = NULL;
   while (!list_empty (l)) {
     struct list_elem *e = list_pop_front (l);
     w = list_entry(e, thread_fd_t, elem);
-    returned_file = w->f;
-    file_close(returned_file);
+    if (w->d != NULL) { // directory
+      dir_close(w->d);
+    } else { // file
+      file_close(w->f);
+    }
     free(w);
   }
 }

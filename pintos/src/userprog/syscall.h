@@ -12,5 +12,6 @@ typedef struct thread_fd {
 
 void syscall_init (void);
 void close_thread_fd(thread_fd_t *fd);
+bool isdir(int fd);
 
 #endif /* userprog/syscall.h */

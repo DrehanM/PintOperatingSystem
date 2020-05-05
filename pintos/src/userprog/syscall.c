@@ -136,25 +136,28 @@ open(const char * file) {
   if (!is_valid_file(file)) {
     exit_file_call(-1);
   }
+  struct thread *t = thread_current();
 
   bool isdirbool = false;
   void *retval;
 
   retval = filesys_open(file, &isdirbool);
+  
+  // printf("opening %s thread: %u dir: %d\n", file, t->tid, isdirbool);
 
   if (retval == NULL) {
     return -1;
   }
 
-  thread_fd_t *fd = malloc(sizeof(thread_fd_t));
+  thread_fd_t *fd = calloc(1 ,sizeof(thread_fd_t));
+
   fd->fd = fd_count;
 
-  if (isdirbool)
+  if (isdirbool) 
     fd->d = (struct dir *) retval;
   else
     fd->f = (struct file *) retval;
   
-  struct thread *t = thread_current();
   struct list *l = &thread_current()->fd_map;
   list_push_front(l, &fd->elem);
   fd_count++;
@@ -187,7 +190,7 @@ write(int fd, void *buffer, int size) {
   }
 
   struct file *file_ = get_file_from_fd(fd);
-  if (file_ != NULL) {
+  if (file_ != NULL) { //&& !file_deny_write) {
     int written_bytes = file_write(file_, buffer, size);
     return written_bytes;
   }
@@ -213,7 +216,7 @@ close(int fd) {
   remove_file(fd);
 }
 
-static bool
+bool
 isdir(int fd) {
   struct dir *dir_ = get_dir_from_fd(fd);
   return dir_ != NULL;
@@ -282,6 +285,11 @@ file_operation_handler(struct intr_frame *f) {
       int size = args[3];
       void *buffer = (void *)args[2];
       int fd = args[1];
+
+      if (isdir(fd)) {
+        exit_file_call(-1);
+      }
+
       if (fd == 1){
         printf("%.*s", size, (char *) buffer);
       } else {
