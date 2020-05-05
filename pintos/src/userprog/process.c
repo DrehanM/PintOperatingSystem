@@ -87,7 +87,6 @@ void decrement_all_references(struct wait_status *ws) {
 tid_t
 process_execute (const char *command)
 {
-  // printf("%s\n", command);
   char command_copy[strlen(command) + 1];
   strlcpy (command_copy, command, strlen(command) + 1);
 
@@ -101,7 +100,7 @@ process_execute (const char *command)
     return TID_ERROR;
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (command, PRI_DEFAULT, start_process, command_copy);
+  tid = thread_create (command, PRI_USER, start_process, command_copy);
   if (tid == TID_ERROR) {
     return TID_ERROR;
   }
@@ -290,6 +289,8 @@ start_process (void *command_)
     sema_up(&ws->done_loading);
     thread_exit ();
   }
+
+
 
   sema_up(&ws->done_loading);
 

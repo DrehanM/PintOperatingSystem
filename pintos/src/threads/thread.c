@@ -217,12 +217,13 @@ thread_create (const char *name, int priority,
   init_wait_status(&t->wait_status, t->tid);
 
   /* Inherit parent's cwd */
-  t->cwd = calloc(1, sizeof(struct dir *));
 
-  if (thread_current()->cwd != NULL)
-    t->cwd = dir_open(dir_get_inode(thread_current()->cwd));
-  else 
-    t->cwd = dir_open_root();
+  // if (priority == PRI_USER) {
+  //   if (thread_current()->cwd != NULL)
+  //     t->cwd = dir_open(dir_get_inode(thread_current()->cwd));
+  //   else 
+  //     t->cwd = dir_open_root();
+  // }
 
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);

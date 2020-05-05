@@ -25,7 +25,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
-
+#define PRI_USER 42
 typedef struct wait_status {
 	// members to be used during WAIT syscalls
 	struct semaphore dead;			// parent calls sema down to wait for child to die, dead process calls sema up
