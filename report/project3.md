@@ -9,7 +9,7 @@ For Task 2: Extensible Files, we chose to implement the inode_resize function as
 - concurrent reads on the same sector
 - blocking extending writes
 
-The monitor is designed to synchronize inode accesses. Since file reads will be observing the inode length, all reads need read access to the inode. Since non-extending writes also only read inode data, these are treated as readers as well. File extension is considered a writer operation since this requires overwriting the length member. Likewise, any access that requires a thread to edit inode data is checked into the system as a writer (like file_deny_write).
+The monitor is designed to synchronize inode accesses. Since file reads will be observing the inode length, all reads need read access to the inode. Since non-extending writes also only read inode data, these are treated as readers as well. File extension is considered a writer operation since this requires overwriting the length member. Likewise, any access that requires a thread to edit inode data (like file_deny_write) is checked into the system as a writer.
 
 Other changes we made were synchonizing the free map and caching it in memory (only writing to disk on shutdown). We also removed the inode_disk member of inode.
 
