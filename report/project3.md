@@ -6,7 +6,7 @@ For Task 1: Buffer Cache, the only change we made was including a size and offse
 
 For Task 2: Extensible Files, we chose to implement the inode_resize function as seen in discussion to better handle for rollbacks on failed sector allocation. Additionally, we encountered race conditions resultant of concurrent reads during file extension operations. To remedy this, we included a reader-writer monitor that allows the following accesses:
 - concurrent reads and non-extending writes on different sectors
-- concurrent reads on any sector
+- concurrent reads on the same sector
 - blocking extending writes
 The monitor is designed to synchronize inode accesses. Since file reads will be observing the inode length, all reads need read access to the inode. Since non-extending writes also only read inode data, these are treated as readers as well. File extension is considered a writer operation since this requires overwriting the length member. Likewise, any access that requires a thread to edit inode data is checked into the system as a writer (like file_deny_write).
 
