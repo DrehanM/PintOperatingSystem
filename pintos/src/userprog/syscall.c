@@ -234,7 +234,6 @@ static int inumber(int fd) {
   return -1;
 }
 
-
 void
 close_thread_fd(thread_fd_t *fd) {
   close(fd->fd);

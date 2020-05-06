@@ -61,7 +61,7 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
   if (isdir) { 
     success = (dir != NULL
             && free_map_allocate (1, &inode_sector)
-            && dir_create (inode_sector, initial_size)
+            && dir_create (inode_sector, initial_size, dir->inode->sector)
             && dir_add(dir, filename, inode_sector));
   } else {
   success = (dir != NULL
@@ -69,8 +69,9 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
             && inode_create (inode_sector, initial_size)
             && dir_add (dir, filename, inode_sector));
   }
-  if (!success && inode_sector != 0)
+  if (!success && inode_sector != 0) {
     free_map_release (inode_sector, 1);
+  }
   dir_close (dir);
 
   return success;
@@ -86,6 +87,12 @@ filesys_open (const char *name, bool *isdir)
 {
   struct dir *dir;
   struct inode *inode;
+
+  char *root = "/";
+  if (strcmp(name, root) == 0) {
+    *isdir = true;
+    return dir_open_root();
+  }
 
   dir = get_last_dir(name);
 
@@ -120,8 +127,10 @@ filesys_open (const char *name, bool *isdir)
 bool
 filesys_remove (const char *name)
 {
-  struct dir *dir = dir_open_root ();
-  bool success = dir != NULL && dir_remove (dir, name);
+  struct dir *dir = get_last_dir(name);
+  char filename[NAME_MAX + 1];
+  get_filename_from_path(name, filename);
+  bool success = dir != NULL && dir_remove (dir, filename);
   dir_close (dir);
 
   return success;
@@ -133,7 +142,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16))
+  if (!dir_create (ROOT_DIR_SECTOR, 16, ROOT_DIR_SECTOR))
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");
@@ -173,8 +182,8 @@ struct dir
     return NULL;
   }
 
-  struct dir *dir;
-  struct dir *prev;
+  struct dir *dir = NULL;
+  struct dir *prev = NULL;
 
   if (fp[0] == '/') { // use absolute 
     dir = dir_open_root();
@@ -194,6 +203,9 @@ struct dir
     if (!success) {  
 
       if (get_next_part(name, &fp) != 1) { // we've gone to the last dir
+        if (prev != NULL) {
+          dir_close(prev);
+        }
         return dir;
       }
       
@@ -203,15 +215,22 @@ struct dir
     
     if (!is_dir(inode)) {
       if (get_next_part(name, &fp) == 0) { // gotten the last file, return dir
+        if (prev != NULL) {
+          dir_close(prev);
+        }
         return dir;
       }
       dir_close(dir);
       printf("not dir and not end\n");
       return NULL;
     }
+    if (prev != NULL) {
+      dir_close(prev);
+    }
     prev = dir;
     dir = dir_open(inode);
   }
+  dir_close(dir);
   return prev;
 }
 
@@ -247,6 +266,7 @@ verify_filepath (const char *fp, struct dir *dir, struct inode **inode) {
   if (fp[0] == '/') {
     dir_close(dir);
     dir = dir_open_root();
+    *inode = dir_get_inode(dir);
   }
 
   char name[NAME_MAX + 1];

@@ -7,17 +7,7 @@
 #include "threads/thread.h"
 #include "threads/malloc.h"
 
-
-#define PARENT_NAME ".."
-#define SELF_NAME "."
-
 bool change_parent_dir(struct dir *dir, block_sector_t parent_sector);
-/* A directory. */
-struct dir
-  {
-    struct inode *inode;                /* Backing store. */
-    off_t pos;                          /* Current position. */
-  };
 
 /* A single directory entry. */
 struct dir_entry
@@ -30,11 +20,13 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
- dir_create (block_sector_t sector, size_t entry_cnt)
+ dir_create (block_sector_t sector, size_t entry_cnt, block_sector_t parent_sector)
 {
   if (inode_create_dir (sector, (entry_cnt + 2) * sizeof (struct dir_entry))) {
     struct dir *dir = dir_open(inode_open(sector));
-    return dir_add(dir, SELF_NAME, sector);
+    bool success = dir_add(dir, PARENT_NAME, parent_sector) && dir_add(dir, SELF_NAME, sector);
+    dir_close(dir);
+    return success;
   }
   return false;
 }
@@ -186,16 +178,6 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
-  /* Change the old parent directory entry to match the new one */
-  if (success && inode_sector(dir->inode) != sector) {  // if this is not a dir_add to add self to dir
-    struct inode *child = inode_open(sector);
-    if (child && is_dir(child)) {
-      struct dir *child_dir = dir_open(child);
-      success = change_parent_dir(child_dir, inode_sector(dir->inode));
-    }
-    inode_close(child);
-  }
-
  done:
   return success;
 }
@@ -211,6 +193,19 @@ bool chdir(char *name) {
     return true;
   }
   return false;
+}
+
+int number_entries(struct dir *dir) {
+  size_t ofs;
+  struct dir_entry e;
+  int count = 0;
+  for (ofs = 0; inode_read_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
+      ofs += sizeof e) {
+        if (e.in_use) {
+          count++;
+        }
+  }
+  return count;
 }
 
 /* Removes any entry for NAME in DIR.
@@ -235,6 +230,23 @@ dir_remove (struct dir *dir, const char *name)
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+
+  if (inode->sector == thread_current()->cwd->inode->sector) {
+    goto done;
+  }
+
+  if (is_dir(inode)) { 
+    // dont delete directory if there are contents
+    struct dir *d = dir_open(inode);
+    if (number_entries(d) > 2) {
+      goto done;
+    }
+
+    // dont delete directory if there are still accesses
+    if (inode->open_cnt > 1) {
+      goto done;
+    }
+  }
 
   /* Erase directory entry. */
   e.in_use = false;
