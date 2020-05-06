@@ -183,13 +183,16 @@ dir_add (struct dir *dir, const char *name, block_sector_t sector)
 }
 
 bool chdir(char *name) {
-  struct dir *dir = thread_current()->cwd;
+  struct thread *t = thread_current();
   struct inode *inode;
 
-  bool success = verify_filepath(name, dir, &inode);
+  bool success = verify_filepath(name, t->cwd, &inode);
 
   if (success) {
-    thread_current()->cwd = dir_open(inode);
+    // if (t->cwd != NULL) {
+    //   dir_close(t->cwd);
+    // }
+    t->cwd = dir_open(inode);
     return true;
   }
   return false;
@@ -223,15 +226,20 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (name != NULL);
 
   /* Find directory entry. */
-  if (!lookup (dir, name, &e, &ofs))
+  if (!lookup (dir, name, &e, &ofs)) {
+    // printf("cant find dir in remove\n");
     goto done;
+  }
 
   /* Open inode. */
   inode = inode_open (e.inode_sector);
-  if (inode == NULL)
+  if (inode == NULL) {
+    // printf("cant open inode in remove\n");
     goto done;
+  }
 
   if (inode->sector == thread_current()->cwd->inode->sector) {
+    // printf("inode is cwd\n");
     goto done;
   }
 
@@ -239,19 +247,23 @@ dir_remove (struct dir *dir, const char *name)
     // dont delete directory if there are contents
     struct dir *d = dir_open(inode);
     if (number_entries(d) > 2) {
+      // printf("directory isnt empty\n");
       goto done;
     }
 
     // dont delete directory if there are still accesses
-    if (inode->open_cnt > 1) {
+    if (inode->open_cnt > 2) {
+      // printf("open_cnt == %d \n", inode->open_cnt);
       goto done;
     }
   }
 
   /* Erase directory entry. */
   e.in_use = false;
-  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e)
+  if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) {
+    // printf("cant write to inode in remove\n");
     goto done;
+  }
 
   /* Remove inode. */
   inode_remove (inode);
@@ -273,7 +285,7 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e)
     {
       dir->pos += sizeof e;
-      if (e.in_use && !strcmp(e.name, SELF_NAME) && !strcmp(e.name, PARENT_NAME))
+      if (e.in_use && strcmp(e.name, SELF_NAME) != 0 && strcmp(e.name, PARENT_NAME) != 0)
         {
           strlcpy (name, e.name, NAME_MAX + 1);
           return true;
