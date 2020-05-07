@@ -13,7 +13,9 @@ The monitor is designed to synchronize inode accesses. Since file reads will be 
 
 Other changes we made were synchonizing the free map and caching it in memory (only writing to disk on shutdown). We also removed the inode_disk member of inode.
 
-For Task 3: Subdirectories, the first change to our design included adding a separate verification function for directory operations. //BEN & DIEGO summarize the rest
+For Task 3: Subdirectories, the first change to our design included adding a separate verification function for directory operations. For example we created a `dir_create` function to be used instead of `inode_create` in `filesys_create`, which created an inode and initialized `.` and `..` to the directory. Another change we made to our design was deciding that we wouldn't allow deletion of the cwd. We also added a check to make sure we didn't read or write to a directory, and we added a  `dir_lock` in the underlying directory inode to make sure operations on directories were synchronized. 
+
+We also found a couple cute bugs from project 1. The first was our argument validation turned out to be incorrect which lead to weird errors in the persistence calls. Another was that we commented out parts of `free-map.c` which resulted in free_map_allocate returning the same sector multiple times, overwriting files. 
 
 ## Student Testing Report
 // Luke & Chris
