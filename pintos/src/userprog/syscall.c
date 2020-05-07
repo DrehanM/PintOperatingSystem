@@ -11,7 +11,7 @@
 #include "threads/vaddr.h"
 #include "process.h"
 #include "threads/palloc.h"
-
+#include "filesys/inode.h"
 
 static void syscall_handler (struct intr_frame *);
 //static struct lock global_file_lock;
@@ -20,14 +20,14 @@ static size_t fd_count = 2;
 static
 bool is_valid_args(uint32_t *args, int number_args) {
   // returns true if valid, false otherwise
-  if (!(is_user_vaddr(args) && is_user_vaddr(args + 4 * number_args - 1))) {
+  if (!(is_user_vaddr(args) && is_user_vaddr((char *) args + 4 * number_args))) {
     return false;
   }
 
   uint32_t *active_pd = thread_current()->pagedir;
 
   void *pd_beginning = pagedir_get_page(active_pd, args);
-  void *pd_end = pagedir_get_page(active_pd, args + 4 * number_args - 1);
+  void *pd_end = pagedir_get_page(active_pd, (char *)args + 4 * number_args);
   
   return (pd_beginning != NULL && pd_end != NULL);
 }
@@ -153,11 +153,13 @@ open(const char * file) {
 
   fd->fd = fd_count;
 
-  if (isdirbool) 
+  if (isdirbool) {
     fd->d = (struct dir *) retval;
-  else
+    // printf("%d is a dir\n", fd_count);
+  } else {
     fd->f = (struct file *) retval;
-  
+    // printf("%d is a file\n", fd_count);
+  }
   struct list *l = &thread_current()->fd_map;
   list_push_front(l, &fd->elem);
   fd_count++;
@@ -177,6 +179,7 @@ read(int fd, void *buffer, int size) {
   }
   struct file *file_ = get_file_from_fd(fd);
   if (file_ != NULL) {
+    // printf("r fd: %d size: %d sector: %u\n", fd, size, file_->inode->sector);
     int read_bytes = file_read(file_, buffer, size);
     return read_bytes;
   }
@@ -191,6 +194,7 @@ write(int fd, void *buffer, int size) {
 
   struct file *file_ = get_file_from_fd(fd);
   if (file_ != NULL) { //&& !file_deny_write) {
+    // printf("w fd: %d size: %d sector: %u\n", fd, size, file_->inode->sector);
     int written_bytes = file_write(file_, buffer, size);
     return written_bytes;
   }
@@ -247,6 +251,7 @@ file_operation_handler(struct intr_frame *f) {
       if (!is_valid_args(args, 3)) {
         exit_file_call(-1);
       }
+      // printf("creating %s\n", args[1]);
       f->eax = create((char *) args[1], (unsigned int) args[2], false);
       break;                /* Create a file. */
     case SYS_REMOVE:
@@ -344,14 +349,16 @@ file_operation_handler(struct intr_frame *f) {
       }
       struct dir *dir = get_dir_from_fd((int) args[1]);
       f->eax = dir_readdir(dir, (char *) args[2]);
+      // printf("fd: %d is a directory: %d", fd, f->eax);
       break;
     }                /* Reads a directory entry. */
     case SYS_ISDIR: {
-       if (!is_valid_args(args, 2)) {
+      if (!is_valid_args(args, 2)) {
         exit_file_call(-1);
       }
       int fd = args[1];
       f->eax = isdir(fd);
+      // printf("fd: %d is a directory: %d\n", fd, f->eax);
       break;
     }                 /* Tests if a fd represents a directory. */
     case SYS_INUMBER: {
@@ -360,6 +367,7 @@ file_operation_handler(struct intr_frame *f) {
       }
       int fd = args[1];
       f->eax = inumber(fd);
+      // printf("fd: %d is inumber: %d\n", fd, f->eax);
       break;
     }
   }
@@ -398,6 +406,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     shutdown_power_off();
     return;
   } else if (args[0] == SYS_EXEC) {
+    if (!is_valid_args(args, 2)) {
+      exit(-1);
+    }
     if (!is_valid_file(args[1])) {
       exit(-1);
     }

@@ -57,7 +57,7 @@ filesys_create (const char *name, off_t initial_size, bool isdir)
   if (!get_filename_from_path(name, filename)) { // filename is too large
     return false;
   }
-  
+
   if (isdir) { 
     success = (dir != NULL
             && free_map_allocate (1, &inode_sector)

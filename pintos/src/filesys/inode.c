@@ -129,6 +129,7 @@ void write_all_dirty_sectors() {
 // Also called in cache_write with args SIZE = BLOCK_SECTOR_SIZE and SECTOR_OFS = 0
 void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, size_t sector_ofs) {
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
+
   struct cached_sector *cs = get_cached_sector(sector_idx);
   char *buff = buffer;
   for (size_t i = 0; i < size; i++) {
@@ -301,6 +302,7 @@ bool inode_resize(struct inode_disk *disk_inode, off_t size) {
 
   free(doubly_indirect_ptr);
   free(indirect_ptr);
+
   return true;
 }
 
