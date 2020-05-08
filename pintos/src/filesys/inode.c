@@ -57,7 +57,7 @@ struct cached_sector {
    During eviction, we write back to memory using block_write if the dirty bit is true. 
    Aquires the sectors lock and returns a pointer to the sector. 
    Callers of this function must release sectors lock after done using. */
-struct cached_sector *get_cached_sector(block_sector_t sector_idx) {
+struct cached_sector *get_cached_sector(block_sector_t sector_idx, bool is_write) {
   // look for sector_idx in list
   struct list_elem *e;
   struct cached_sector *cs;
@@ -76,7 +76,7 @@ struct cached_sector *get_cached_sector(block_sector_t sector_idx) {
         } 
         // if it has we need to iterate through the list again to make sure it hasnt been pulled in since
         lock_release(&cs->sector_lock);
-        return get_cached_sector(sector_idx);
+        return get_cached_sector(sector_idx, is_write);
       }
     }
   }
@@ -97,8 +97,10 @@ struct cached_sector *get_cached_sector(block_sector_t sector_idx) {
       block_write (fs_device, new_cs->sector_idx, new_cs->data);
     }
   }
-
-  block_read(fs_device, sector_idx, new_cs->data);
+  if (is_write)
+    memset(new_cs->data, 0, BLOCK_SECTOR_SIZE);
+  else
+    block_read(fs_device, sector_idx, new_cs->data);
   new_cs->sector_idx = sector_idx;
   new_cs->dirty = 0;
 
@@ -130,7 +132,7 @@ void write_all_dirty_sectors() {
 void cache_write_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, size_t sector_ofs) {
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
 
-  struct cached_sector *cs = get_cached_sector(sector_idx);
+  struct cached_sector *cs = get_cached_sector(sector_idx, true);
   char *buff = buffer;
   for (size_t i = 0; i < size; i++) {
     cs->data[i + sector_ofs] = buff[i];
@@ -148,7 +150,7 @@ void cache_write(block_sector_t sector_idx, void *buffer) {
 // Also called in cache_read with args SIZE = BLOCK_SECTOR_SIZE and SECTOR_OFS = 0
 void cache_read_with_size_and_offset(block_sector_t sector_idx, void *buffer, size_t size, size_t sector_ofs) {
   ASSERT(sector_ofs + size <= BLOCK_SECTOR_SIZE);
-  struct cached_sector *cs = get_cached_sector(sector_idx);
+  struct cached_sector *cs = get_cached_sector(sector_idx, false);
   char *buff = buffer;
   for (size_t i = 0; i < size; i++) {
     buff[i] = cs->data[i + sector_ofs];
